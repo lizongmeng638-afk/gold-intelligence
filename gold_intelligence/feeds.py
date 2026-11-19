@@ -66,11 +66,11 @@ def safe_url(value):
     return value if parts.scheme in ('https', 'http') and parts.netloc else ''
 
 
-def get_bytes(url, params=None, deadline_seconds=12, max_bytes=3_000_000, timeout=(3, 6)):
+def get_bytes(url, params=None, deadline_seconds=12, max_bytes=3_000_000, timeout=(3, 6), request_headers=None):
     """No retries here: the hub performs bounded, per-feed backoff."""
     start = time.monotonic()
     try:
-        with requests.get(url, params=params, headers=HEADERS, timeout=timeout, stream=True) as r:
+        with requests.get(url, params=params, headers={**HEADERS, **(request_headers or {})}, timeout=timeout, stream=True) as r:
             if r.status_code == 429:
                 retry = r.headers.get('Retry-After', '120')
                 try:

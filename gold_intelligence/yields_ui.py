@@ -6,12 +6,24 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from .yields import RATE_LABELS, rate_summary, resolve_rates
+from .yields import RATE_LABELS, RATE_KEYS, RATE_SUPPORT, rate_summary, resolve_rates
+from .rate_freshness import rate_freshness,completed_check,reported_date
+from .feeds import parse_time,UTC
 
 TZ=ZoneInfo('Asia/Shanghai')
 
 
-def render_rate_card(rows,label,compact=False):
+def rate_time(value):
+    if not value:
+        return '未提供'
+    try:
+        dt=datetime.fromtimestamp(value,UTC) if isinstance(value,(int,float)) else parse_time(value)
+        return dt.astimezone(TZ).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError,TypeError,OverflowError):
+        return '未提供'
+
+
+def render_rate_card(rows,label,compact=False,feeds=None,sid=None):
     info=rate_summary(rows)
     if info is None:
         st.metric(label,'暂无')
@@ -30,18 +42,49 @@ def render_rate_card(rows,label,compact=False):
             st.caption(f"较前5个有效观测值：{info['change5_bp']:+.1f} 基点")
         else:
             st.caption('不足6个有效观测值，暂无5期变化。')
-    if (datetime.now(TZ).date()-datetime.strptime(info['date'],'%Y-%m-%d').date()).days>7:
-        st.warning('该观测日期已超过7天，请核对来源更新时间。')
+    if feeds is not None and sid is not None:
+        freshness=rate_freshness(rows,feeds,sid)
+        st.markdown(f'<span style="color:{freshness["color"]};font-size:12px;font-weight:700">{escape(freshness["label"])}</span>',unsafe_allow_html=True)
+        st.caption(f"最近完成检查：{rate_time(freshness['last_checked_at'])} 北京时间")
+        if not compact:
+            st.caption(f"当前观测最近抓取：{rate_time(freshness.get('data_fetched_at'))} 北京时间")
+            if freshness.get('source_updated_at'):
+                st.caption(f"来源标注更新时间：{rate_time(freshness['source_updated_at'])} 北京时间（XML元数据，非成交时间）")
+            elif freshness.get('source_release_date'):
+                st.caption(f"来源发布日期：{freshness['source_release_date']}；精确发布时间未提供")
+            else:
+                st.caption('来源发布时间：未提供；不以本机抓取时间冒充发布时间。')
+
+
+def render_rate_source_audit(feeds):
+    rows=[]
+    for key in RATE_KEYS:
+        if key=='macro':
+            continue
+        entry=feeds.get(key,{})
+        if not entry:
+            continue
+        data=entry.get('data') or {}
+        for sid in RATE_SUPPORT[key]:
+            date=reported_date(data,sid)
+            rows.append({'来源':entry.get('label',key),'指标':RATE_LABELS[sid],
+                '最近成功返回的观测日期':date or '未取得',
+                '最近完成检查（北京时间）':rate_time(completed_check(entry)),
+                '状态':entry.get('status',''), '检查错误':entry.get('error','')})
+    with st.expander('各来源更新核验（展开查看是否有更晚的数据）'):
+        st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
 
 
 def render_yields(feeds):
     rates=resolve_rates(feeds)
     st.markdown('### 美债收益率 · 上升与下降')
-    st.caption('↑ 红色＝收益率上升；↓ 绿色＝下降；→ 金色＝持平。变化相对上一有效观测日，单位为基点；1基点=0.01个百分点。官方日度数据不是盘中实时报价。')
+    st.caption('收益率每15分钟检查一次。↑ 红色＝收益率上升；↓ 绿色＝下降；→ 金色＝持平。变化相对上一有效观测日，单位为基点；1基点=0.01个百分点。官方日度数据不是盘中实时报价。')
     columns=st.columns(3)
     for col,sid in zip(columns,['DFII10','DGS2','DGS10']):
         with col:
-            render_rate_card(rates[sid],RATE_LABELS[sid])
+            render_rate_card(rates[sid],RATE_LABELS[sid],feeds=feeds,sid=sid)
+    st.caption('延迟判断参考纽约时间17:00和美国工作日（含常见休市日）估计应有的观测日期；临时休市或官方延发以源站为准。新抓取成功不等于数据已更新，检查失败也不会被标为“最新”。')
+    render_rate_source_audit(feeds)
     st.caption('10年期实际收益率来自通胀保值国债（TIPS）；2年期和10年期名义收益率未扣除通胀。不会用名义收益率替代实际收益率。')
     available=[sid for sid in RATE_LABELS if rates[sid]]
     if not available:
@@ -66,10 +109,14 @@ def render_yields(feeds):
     details=[]
     for sid in available:
         summary=rate_summary(rates[sid])
+        freshness=rate_freshness(rates[sid],feeds,sid)
         details.append({'指标':RATE_LABELS[sid],'最新值（%）':summary['value'],'方向':summary['direction'],
             '较上一观测日（基点）':summary['change_bp'],'上一有效观测日':summary['previous_date'],
             '最新观测日':summary['date'],'较前5个观测值（基点）':summary['change5_bp'],
-            '有效观测数':summary['count'],'最新值来源':summary.get('source','FRED')})
+            '有效观测数':summary['count'],'最新值来源':summary.get('source','FRED'),
+            '延迟状态':freshness['label'],'按美国发布日估计应到':freshness['expected_date'],
+            '最近检查（北京时间）':rate_time(freshness['last_checked_at']),
+            '当前观测抓取（北京时间）':rate_time(summary.get('fetched_at'))})
     st.dataframe(pd.DataFrame(details),hide_index=True,width='stretch',
         column_config={'最新值（%）':st.column_config.NumberColumn(format='%.2f'),
                        '较上一观测日（基点）':st.column_config.NumberColumn(format='%+.1f'),

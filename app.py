@@ -38,7 +38,8 @@ st.markdown('''<style>
 @st.cache_resource
 def get_hub():
     cache_path = os.environ.get('GOLD_CACHE_DIR', str(BASE / 'data' / 'cache'))
-    return DataHub(cache_path, specs=default_specs())
+    specs = default_specs()  # V1.2.2: independent Treasury primary feeds and freshness checks
+    return DataHub(cache_path, specs=specs)
 
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=24)
@@ -131,9 +132,9 @@ def render_market(mkt, fred, feeds):
             target.caption(f'观测日期：{s.index[-1].date()}')
     rates = resolve_rates(feeds)
     with cols[2]:
-        render_rate_card(rates['DFII10'],'10年期实际收益率',compact=True)
+        render_rate_card(rates['DFII10'],'10年期实际收益率',compact=True,feeds=feeds,sid='DFII10')
     with cols[3]:
-        render_rate_card(rates['DGS2'],'2年期美债收益率（名义）',compact=True)
+        render_rate_card(rates['DGS2'],'2年期美债收益率（名义）',compact=True,feeds=feeds,sid='DGS2')
     st.caption('免费参考行情可能延迟。图表及模型采用 COMEX 黄金期货日线；现货报价独立显示。')
     if not len(gold):
         st.info('历史行情正在后台采集或暂不可用。宏观、新闻和连接诊断仍可单独查看。')
@@ -246,9 +247,9 @@ hub.refresh_due(quote_interval=interval)
 if st.sidebar.button('↻ 后台刷新',width='stretch'):
     count = hub.refresh_due(force=True)
     st.sidebar.info(f'已提交 {count} 个更新任务。缓存保留；正在运行及冷却中的任务不会重复请求。')
-st.sidebar.caption('现货60秒 · 日线与收益率1小时 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
+st.sidebar.caption('现货60秒 · 日线1小时 · 收益率15分钟 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
 st.sidebar.divider()
-st.sidebar.caption('V1.2.1 · 本地缓存与后台采集版')
+st.sidebar.caption('V1.2.2 · 本地缓存与后台采集版')
 st.sidebar.caption('无需付费 AI API；免费行情可能延迟。')
 st.markdown('<div class="hero"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>国际行情 · 宏观数据 · 新闻验证 · 统计预测</p></div>',unsafe_allow_html=True)
 snapshot = hub.snapshot()
@@ -280,4 +281,4 @@ with news_tab:
     render_news(news, snapshot['feeds'])
 with quality_tab:
     render_quality(snapshot['feeds'], snapshot['storage_error'])
-st.caption('GOLD INTELLIGENCE V1.2.1 · 黄金研究工具 · 统计模型不保证未来价格。')
+st.caption('GOLD INTELLIGENCE V1.2.2 · 黄金研究工具 · 统计模型不保证未来价格。')
