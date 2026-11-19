@@ -8,11 +8,17 @@ from io import BytesIO, StringIO
 import math
 import re
 import time
+import tempfile
+import threading
+from pathlib import Path
 from urllib.parse import quote, urlparse
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
 import requests
+
+_YF_SETUP_LOCK = threading.Lock()
+_YF_CONFIGURED = False
 
 UTC = timezone.utc
 FRED_IDS = ('DFII10', 'DGS10', 'T10YIE', 'CPIAUCSL', 'PCEPI', 'UNRATE', 'FEDFUNDS', 'PAYEMS')
@@ -145,11 +151,41 @@ def parse_market(data, ticker):
             'url': f'https://finance.yahoo.com/quote/{quote(ticker, safe="")}/history/'}
 
 
+def _fetch_market_yfinance(ticker):
+    # The library maintains Yahoo cookies and supports its alternate chart host.
+    # Configure a writable cache once; collection remains in background workers.
+    global _YF_CONFIGURED
+    import yfinance as yf
+    with _YF_SETUP_LOCK:
+        if not _YF_CONFIGURED:
+            yf.set_tz_cache_location(str(Path(tempfile.gettempdir()) / 'gold-intelligence-yahoo'))
+            _YF_CONFIGURED = True
+    frame = yf.Ticker(ticker).history(period='5y', interval='1d', auto_adjust=True, timeout=8)
+    if frame is None or frame.empty or 'Close' not in frame:
+        raise FeedError('yfinance备用方式未返回历史行情')
+    frame = frame.dropna(subset=['Close'])
+    result = parse_market({'chart': {'result': [{
+        'meta': {'symbol': ticker, 'exchangeTimezoneName': str(frame.index.tz or 'UTC')},
+        'timestamp': [int(dt.timestamp()) for dt in frame.index],
+        'indicators': {'quote': [{'close': [float(v) for v in frame['Close']]}]}
+    }]}}, ticker)
+    result['source'] += ' · yfinance备用抓取'
+    return result
+
+
 def fetch_market(ticker):
-    # Avoid the unavailable XAUUSD=X. Keep each ticker independent.
-    data = get_json(f'https://query1.finance.yahoo.com/v8/finance/chart/{quote(ticker, safe="")}',
-                    {'range': '5y', 'interval': '1d'})
-    return parse_market(data, ticker)
+    # Avoid XAUUSD=X. Try the public chart once, then the supported library
+    # transport once. The hub retains normal backoff and per-host concurrency.
+    try:
+        data = get_json(f'https://query1.finance.yahoo.com/v8/finance/chart/{quote(ticker, safe="")}',
+                        {'range': '5y', 'interval': '1d'})
+        return parse_market(data, ticker)
+    except FeedError as primary:
+        try:
+            return _fetch_market_yfinance(ticker)
+        except Exception as fallback:
+            raise FeedError(f'{primary}；备用抓取失败：{type(fallback).__name__}: {str(fallback)[:100]}',
+                            retry_after=primary.retry_after) from fallback
 
 
 def parse_fred(content):

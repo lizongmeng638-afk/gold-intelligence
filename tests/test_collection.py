@@ -144,6 +144,16 @@ class CollectionTests(unittest.TestCase):
             with self.assertRaises(FeedError):
                 fetch_gdelt()
 
+    def test_yahoo_rate_limit_falls_back_without_erasing_backoff(self):
+        from gold_intelligence.feeds import fetch_market
+        expected = {'ticker':'GC=F','rows':[{'date':'2026-11-19','value':800}]}
+        with patch('gold_intelligence.feeds.get_json',side_effect=FeedError('HTTP 429',120)), patch('gold_intelligence.feeds._fetch_market_yfinance',return_value=expected):
+            self.assertEqual(fetch_market('GC=F'),expected)
+        with patch('gold_intelligence.feeds.get_json',side_effect=FeedError('HTTP 429',120)), patch('gold_intelligence.feeds._fetch_market_yfinance',side_effect=RuntimeError('limited')):
+            with self.assertRaises(FeedError) as result:
+                fetch_market('GC=F')
+            self.assertEqual(result.exception.retry_after,120)
+
     def test_market_symbol_validation_and_nonfinite_values(self):
         stamp=int(time.time())-86400
         item={'meta':{'symbol':'GC=F'},'timestamp':[stamp,stamp+1,stamp+2],
