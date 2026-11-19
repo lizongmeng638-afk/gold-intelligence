@@ -21,7 +21,7 @@ _YF_SETUP_LOCK = threading.Lock()
 _YF_CONFIGURED = False
 
 UTC = timezone.utc
-FRED_IDS = ('DFII10', 'DGS10', 'T10YIE', 'CPIAUCSL', 'PCEPI', 'UNRATE', 'FEDFUNDS', 'PAYEMS')
+FRED_IDS = ('DFII10', 'DGS2', 'DGS10', 'T10YIE', 'CPIAUCSL', 'PCEPI', 'UNRATE', 'FEDFUNDS', 'PAYEMS')
 MARKETS = {'GC=F': 'COMEX黄金期货', 'DX-Y.NYB': '美元指数 DXY', '^TNX': '10年期名义收益率',
            '^VIX': 'VIX', 'CL=F': 'WTI原油', 'GLD': 'GLD价格', 'CNY=X': 'USD/CNY'}
 HEADERS = {'User-Agent': 'GOLD-INTELLIGENCE/1.1 (local public-data research)',

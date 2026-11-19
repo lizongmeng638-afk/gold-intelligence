@@ -13,7 +13,9 @@ import streamlit as st
 
 from gold_intelligence.feeds import FRED_IDS, MARKETS, normalize_news, parse_time
 from gold_intelligence.models import classify_news, factor_cards, forecast_model
-from gold_intelligence.service import DataHub
+from gold_intelligence.service import DataHub, default_specs
+from gold_intelligence.yields import resolve_rates, rate_summary
+from gold_intelligence.yields_ui import render_rate_card, render_yields
 from gold_intelligence.domestic_ui import render_domestic
 
 BASE = Path(__file__).resolve().parent
@@ -36,7 +38,7 @@ st.markdown('''<style>
 @st.cache_resource
 def get_hub():
     cache_path = os.environ.get('GOLD_CACHE_DIR', str(BASE / 'data' / 'cache'))
-    return DataHub(cache_path)
+    return DataHub(cache_path, specs=default_specs())
 
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=24)
@@ -76,6 +78,8 @@ def unpack(feeds, period):
             mkt = mkt.dropna(subset=['Gold'])
     macro = feeds['macro']['data'] or {}
     fred = {sid: to_series(macro.get('series', {}).get(sid, []), sid) for sid in FRED_IDS}
+    for sid, rows in resolve_rates(feeds).items():
+        fred[sid] = to_series(rows, sid)
     news = normalize_news([item for key, feed in feeds.items() if key.startswith('news:') and feed['data']
                            for item in feed['data'].get('items', [])])
     return mkt, fred, news
@@ -109,7 +113,7 @@ def render_market(mkt, fred, feeds):
     quote_data = quote['data']
     gold = mkt['Gold'].dropna() if 'Gold' in mkt else pd.Series(dtype=float)
     st.markdown('### 01 / 全球黄金市场总览')
-    cols = st.columns(4)
+    cols = st.columns(5)
     if quote_data:
         cols[0].metric('黄金现货参考 / USD每盎司', f"${quote_data['price']:,.2f}")
         st.caption(f"现货来源：{quote_data['source']} · 来源更新时间：{stamp(quote_data['observed_at'])} 北京时间 · {quote['status']}")
@@ -120,15 +124,16 @@ def render_market(mkt, fred, feeds):
         st.caption('现货报价暂不可用；当前卡片显示 COMEX 期货日线参考。')
     else:
         cols[0].metric('黄金现货参考 / USD每盎司', '等待数据')
-    for target, col, label, suffix in [(cols[1],'DXY','美元指数 DXY',''),(cols[3],'VIX','VIX恐慌指数','')]:
+    for target, col, label, suffix in [(cols[1],'DXY','美元指数 DXY',''),(cols[4],'VIX','VIX恐慌指数','')]:
         s = mkt[col].dropna() if col in mkt else pd.Series(dtype=float)
         target.metric(label, f'{s.iloc[-1]:.2f}{suffix}' if len(s) else '暂无')
         if len(s):
             target.caption(f'观测日期：{s.index[-1].date()}')
-    real = fred.get('DFII10', pd.Series(dtype=float))
-    cols[2].metric('10年期实际收益率', f'{real.iloc[-1]:.2f}%' if len(real) else '暂无')
-    if len(real):
-        cols[2].caption(f'观测日期：{real.index[-1].date()}')
+    rates = resolve_rates(feeds)
+    with cols[2]:
+        render_rate_card(rates['DFII10'],'10年期实际收益率',compact=True)
+    with cols[3]:
+        render_rate_card(rates['DGS2'],'2年期美债收益率（名义）',compact=True)
     st.caption('免费参考行情可能延迟。图表及模型采用 COMEX 黄金期货日线；现货报价独立显示。')
     if not len(gold):
         st.info('历史行情正在后台采集或暂不可用。宏观、新闻和连接诊断仍可单独查看。')
@@ -206,20 +211,26 @@ def render_news(news, feeds):
 
 
 def render_macro(fred, feeds):
-    st.markdown('### 06 / 美国宏观经济指标')
-    labels = {'DFII10':('10年期实际收益率','%','日度'),'DGS10':('10年期名义收益率','%','日度'),
+    render_yields(feeds)
+    st.markdown('### 美国宏观经济指标')
+    labels = {'DFII10':('10年期实际收益率','%','日度'),'DGS2':('2年期名义收益率','%','日度'),'DGS10':('10年期名义收益率','%','日度'),
               'T10YIE':('10年期通胀预期','%','日度'),'CPIAUCSL':('CPI指数','指数','月度'),
               'PCEPI':('PCE价格指数','指数','月度'),'UNRATE':('失业率','%','月度'),
               'FEDFUNDS':('联邦基金有效利率','%','月度'),'PAYEMS':('非农就业人数','千人','月度')}
     macro = feeds['macro']['data'] or {}
     rows = []
+    rate_rows = resolve_rates(feeds)
     for sid,(label,unit,freq) in labels.items():
         s = fred[sid].dropna()
         old = len(s) and (datetime.now(TZ).date() - s.index[-1].date()).days > (7 if freq=='日度' else 75)
+        info = rate_summary(rate_rows.get(sid,[]))
+        acquired = info.get('fetched_at') if info else macro.get('series_fetched',{}).get(sid)
         rows.append({'指标':label,'最新值':f'{s.iloc[-1]:,.2f} {unit}' if len(s) else '暂无',
                      '观测期':str(s.index[-1].date()) if len(s) else '暂无','频率':freq,
-                     '采集时间（北京时间）':stamp(macro.get('series_fetched',{}).get(sid)),
-                     '状态':'本轮未更新，保留历史' if sid in macro.get('missing',[]) else ('观测期较旧' if old else ('已取得' if len(s) else '暂无'))})
+                     '采集时间（北京时间）':stamp(acquired),
+                     '较上一观测日（基点）':info['change_bp'] if info else None,
+                     '来源':info.get('source','FRED') if info else 'FRED',
+                     '状态':'本轮未更新，保留历史' if not info and sid in macro.get('missing',[]) else ('观测期较旧' if old else ('已取得' if len(s) else '暂无'))})
     st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
     st.caption('月度指标的日期是统计期，通常以月初标注，不是发布时间。宏观指标每6小时检查一次，不随行情每分钟重复下载。')
 
@@ -235,9 +246,9 @@ hub.refresh_due(quote_interval=interval)
 if st.sidebar.button('↻ 后台刷新',width='stretch'):
     count = hub.refresh_due(force=True)
     st.sidebar.info(f'已提交 {count} 个更新任务。缓存保留；正在运行及冷却中的任务不会重复请求。')
-st.sidebar.caption('现货60秒 · 日线1小时 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
+st.sidebar.caption('现货60秒 · 日线与收益率1小时 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
 st.sidebar.divider()
-st.sidebar.caption('V1.2 · 本地缓存与后台采集版')
+st.sidebar.caption('V1.2.1 · 本地缓存与后台采集版')
 st.sidebar.caption('无需付费 AI API；免费行情可能延迟。')
 st.markdown('<div class="hero"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>国际行情 · 宏观数据 · 新闻验证 · 统计预测</p></div>',unsafe_allow_html=True)
 snapshot = hub.snapshot()
@@ -269,4 +280,4 @@ with news_tab:
     render_news(news, snapshot['feeds'])
 with quality_tab:
     render_quality(snapshot['feeds'], snapshot['storage_error'])
-st.caption('GOLD INTELLIGENCE V1.2 · Mac本地研究工具 · 统计模型不保证未来价格。')
+st.caption('GOLD INTELLIGENCE V1.2.1 · 黄金研究工具 · 统计模型不保证未来价格。')

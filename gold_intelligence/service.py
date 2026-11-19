@@ -14,6 +14,7 @@ import time
 from typing import Callable
 
 from .domestic import fetch_sge, fetch_retail
+from .yields import fetch_h15, fetch_rate
 from .feeds import MARKETS, FeedError, fetch_fred, fetch_gdelt, fetch_market, fetch_quote, fetch_rss, parse_time
 
 
@@ -35,7 +36,10 @@ def default_specs():
         FeedSpec('cn:retail', '国内品牌渠道挂牌价', 1800, fetch_retail, 'smm', 3*86400),
         FeedSpec('quote', '黄金现货参考报价', 60, fetch_quote, 'gold-api', 15 * 60),
         FeedSpec('market:GC=F', MARKETS['GC=F'], 3600, partial(fetch_market, 'GC=F'), 'yahoo', 5 * 86400),
-        FeedSpec('macro', 'FRED 八项宏观指标', 6 * 3600, fetch_fred, 'fred'),
+        FeedSpec('rates:h15', '美联储H.15关键收益率', 3600, fetch_h15, 'fed', 7*86400),
+        FeedSpec('rates:DFII10', 'FRED 10年期实际收益率', 3600, partial(fetch_rate,'DFII10'), 'fred', 7*86400),
+        FeedSpec('rates:DGS2', 'FRED 2年期名义收益率', 3600, partial(fetch_rate,'DGS2'), 'fred', 7*86400),
+        FeedSpec('macro', 'FRED 九项宏观指标', 6 * 3600, fetch_fred, 'fred'),
         FeedSpec('news:fed', '美联储官方公告', 1800, partial(fetch_rss, 'https://www.federalreserve.gov/feeds/press_all.xml', '美联储官方 RSS'), 'fed'),
         FeedSpec('news:bls', '美国劳工统计局公告', 3600, partial(fetch_rss, 'https://www.bls.gov/feed/bls_latest.rss', '美国劳工统计局 RSS'), 'bls'),
         FeedSpec('news:bbc', 'BBC 国际新闻', 900, partial(fetch_rss, 'https://feeds.bbci.co.uk/news/world/rss.xml', 'BBC World RSS'), 'bbc'),
