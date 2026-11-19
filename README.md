@@ -1,50 +1,53 @@
-# GOLD INTELLIGENCE V1.0（Mac 本地版）
+# GOLD INTELLIGENCE V1.2
 
-本项目是国际黄金智能分析仪表盘的第一版，优先使用免费公开数据。
+国际黄金、国内金价与渠道比价仪表盘，支持 Streamlit Community Cloud 和 Mac 本地运行。入口为仓库根目录 `app.py`。
 
 ## 功能
-- 国际黄金行情：优先 Yahoo Finance `XAUUSD=X`；不可用时回退 `GC=F`（COMEX期货代理，不是现货）。
-- 盘中参考报价：尝试 Yahoo 5分钟数据；不可用时显示最近日线收盘。
-- 市场驱动：DXY、美国10年期名义收益率、VIX、WTI、GLD、USD/CNY（有数据时）。
-- FRED宏观指标：DFII10、DGS10、T10YIE、CPIAUCSL、PCEPI、UNRATE、FEDFUNDS、PAYEMS。
-- GDELT国际新闻：标题去重、事件分类、因果路径、方向与验证条件。
-- 量化预测：时间顺序验证的 Ridge 多因子模型，输出24小时、3天、7天、30天、90天中心预测及80%/95%区间和方向概率。
-- 技术指标：RSI、MA20、MA50、20日年化波动率。
 
-## 重要限制
-1. 免费不等于实时。Yahoo Finance 免费行情可能延迟、限流或改变接口；5分钟数据不保证逐笔实时。
-2. yfinance 是非官方 Yahoo Finance 数据访问库，不代表 Yahoo 官方支持。
-3. CPI、PCE、失业率、非农就业等按月度发布；实际收益率等部分指标按日度发布。
-4. FRED `fredgraph.csv` 是图表 CSV 下载路径，不等于稳定承诺的 API。若不可用，后续可切换到免费的 FRED API Key。
-5. GDELT 新闻覆盖不完整，标题分类可能误判。
-6. 事件卡片不会凭新闻标题编造涨跌幅。V1的价格区间由历史行情模型计算；事件特定冲击幅度需下一阶段建立历史事件样本并回测。
-7. 模型输出不保证准确，不构成投资建议。
+- 国际黄金：Gold API 现货参考报价；COMEX `GC=F` 期货日线、技术指标与统计预测分开标注。
+- 国内走势：上海黄金交易所 Au99.99 最近30个自然日内已公布的人民币元/克日收盘价。
+- 国内渠道：SMM 品牌黄金、金条、回收与换购公开挂牌价，按类别、成色、日期和客户交易方向分别比较。
+- 彩色比价：鲜绿为组内最低价，亮红为最高价，金黄为中间价或同价；并列价格同时标注，旧日期不混入当前排名。支持CSV导出。
+- 银行积存金：支持手动录入建行、工行、农行、中行、招行、交行及其他渠道的报价；明确标注未核验，与公开挂牌分开比较。银行自动报价尚未接入。
+- 宏观与新闻：FRED八项指标，GDELT、BBC World、美联储和BLS官方RSS独立更新。
+- 后台采集：并行请求、成功数据缓存、失败退避、观测时间与采集时间分开显示。单个来源故障不会阻止其他模块展示。
 
-## 安装与启动
-建议 Python 3.11 或 3.12。
+## 云端部署
 
-### 最简单方式
-1. 解压 ZIP。
-2. 进入 `gold_intelligence_v1` 文件夹。
-3. 双击 `启动.command`。
-4. 第一次启动会自动创建虚拟环境、安装依赖并运行。
-5. 浏览器访问 `http://localhost:8501`。
+Streamlit 应用指向本仓库 `main` 分支，入口 `app.py`。需要同时保留 `gold_intelligence/`、`requirements.txt` 和 `.streamlit/config.toml`，不要只复制入口文件。
 
-若 macOS 阻止脚本：右键 `启动.command` → 打开。
+依赖自动根据 requirements.txt 安装；无需付费AI密钥。云端配置使用平台默认监听地址。
 
-### 终端方式
+云端本地缓存保存在实例的 `data/cache/`，休眠、重建或替换实例后可能丢失。报价源在不同网络环境可能超时，查看“数据诊断”了解具体连接状态。
+
+## 本地运行
+
+建议Python 3.11或更新版本。Mac可双击 `启动.command`，也可执行：
+
 ```bash
-cd ~/Downloads/gold_intelligence_v1
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python -m streamlit run app.py
+python -m pip install -r requirements.txt
+python -m streamlit run app.py --server.address=127.0.0.1
 ```
-停止运行：回到终端按 `Control + C`。
 
-## 后续版本
-- 经济日历：预期值、实际值、前值和公布时间。
-- 历史事件研究：估算事件后1小时、1天、3天、5天的异常收益。
-- 模型滚动回测：方向准确率、区间覆盖率、基准模型对比、模型漂移。
-- 加入人民币/克换算和用户积存金持仓管理。
+测试及取数诊断：
+
+```bash
+python -m unittest discover -s tests -v
+python 诊断数据源.py
+```
+
+完整缓存页面测试需要先运行取数诊断，没有缓存时会跳过；其他回归测试可离线运行。
+
+## 报价与模型口径
+
+挂牌价可能不含工费、手续费、地区优惠，不能视作最终到手价。高低标记仅表示所选可比组内的数值大小。银行手动报价按同日、同方向、同成色、距组内最新报价15分钟内比较；记录保存在当前浏览器会话，可导出JSON。
+
+上金所走势图不是国际金价换算。品牌挂牌源为第三方SMM汇总，不是品牌官方报价接口。现货与期货不会混成同一价格序列。
+
+预测沿用V1的Ridge日线统计模型，周期按交易日标注，尚未完成各周期区间覆盖率或事件幅度回测。宏观历史值可能修订，标题规则仅表示传导假设。
+
+## 数据来源
+
+[上金所每日行情](https://www.sge.com.cn/sjzx/quotation_daily_new) · [SMM品牌挂牌表](https://precious.smm.cn/gold-price) · [Gold API](https://gold-api.com/docs) · [Yahoo Finance](https://finance.yahoo.com/) · [FRED](https://fred.stlouisfed.org/) · [GDELT](https://www.gdeltproject.org/) · [BBC World RSS](https://feeds.bbci.co.uk/news/world/rss.xml) · [美联储RSS](https://www.federalreserve.gov/feeds/feeds.htm) · [BLS RSS](https://www.bls.gov/feed/)
