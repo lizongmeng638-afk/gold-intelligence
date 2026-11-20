@@ -1,4 +1,4 @@
-"""GOLD INTELLIGENCE V1.2: rendering reads local snapshots only."""
+"""GOLD INTELLIGENCE V1.3: rendering reads local snapshots only."""
 from datetime import datetime, timezone
 from html import escape
 import math
@@ -17,6 +17,7 @@ from gold_intelligence.service import DataHub, default_specs
 from gold_intelligence.yields import resolve_rates, rate_summary
 from gold_intelligence.yields_ui import render_rate_card, render_yields
 from gold_intelligence.domestic_ui import render_domestic
+from gold_intelligence.logic_ui import render_logic
 
 BASE = Path(__file__).resolve().parent
 TZ = ZoneInfo('Asia/Shanghai')
@@ -27,6 +28,9 @@ st.markdown('''<style>
 [data-testid="stSidebar"]{background:#111a2b;color:#e9eef7}
 [data-testid="stSidebar"] :is(p,label,h1,h2,h3){color:#dbe4f2}
 [data-testid="stMetric"]{background:#142039;border:1px solid #2a3852;padding:13px;border-radius:13px}
+.stApp [data-testid="stMetricValue"]{font-size:clamp(1.15rem,2.1vw,2rem)!important;line-height:1.3}
+.stApp [data-testid="stMetricValue"] p{font-size:inherit!important}
+.stApp [data-testid="stMetricLabel"] p{white-space:normal!important;overflow:visible;text-overflow:clip}
 .hero{padding:22px 24px;border-radius:17px;background:linear-gradient(120deg,#172640,#111827 60%,#382b18);border:1px solid #66502d;margin-bottom:15px}
 .kicker{color:#d8b36b;font-size:11px;letter-spacing:2px;font-weight:700}
 .hero h1{color:#f5f1e8;margin:4px 0;font-size:30px}.hero p{color:#afbdd1;margin:0}
@@ -38,7 +42,7 @@ st.markdown('''<style>
 @st.cache_resource
 def get_hub():
     cache_path = os.environ.get('GOLD_CACHE_DIR', str(BASE / 'data' / 'cache'))
-    specs = default_specs()  # V1.2.2: independent Treasury primary feeds and freshness checks
+    specs = default_specs()  # V1.3: long history plus independent Treasury freshness feeds
     return DataHub(cache_path, specs=specs)
 
 
@@ -238,8 +242,8 @@ def render_macro(fred, feeds):
 
 hub = get_hub()
 st.sidebar.markdown('## 🟡 GOLD INTELLIGENCE')
-st.sidebar.caption('国际与国内黄金 · 渠道比价 · 宏观 · 预测')
-period_label = st.sidebar.selectbox('历史数据范围',['1年','2年','5年'],index=1)
+st.sidebar.caption('历史逻辑 · 斐波那契 · 国内比价 · 宏观')
+period_label = st.sidebar.selectbox('国际期货日线范围',['1年','2年','5年'],index=1)
 period = {'1年':1,'2年':2,'5年':5}[period_label]
 refresh = st.sidebar.selectbox('自动检查更新',['1分钟','5分钟','手动'],index=0)
 interval = 300 if refresh == '5分钟' else 60
@@ -249,9 +253,9 @@ if st.sidebar.button('↻ 后台刷新',width='stretch'):
     st.sidebar.info(f'已提交 {count} 个更新任务。缓存保留；正在运行及冷却中的任务不会重复请求。')
 st.sidebar.caption('现货60秒 · 日线1小时 · 收益率15分钟 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
 st.sidebar.divider()
-st.sidebar.caption('V1.2.2 · 本地缓存与后台采集版')
+st.sidebar.caption('V1.3 · 黄金逻辑与历史复盘版')
 st.sidebar.caption('无需付费 AI API；免费行情可能延迟。')
-st.markdown('<div class="hero"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>国际行情 · 宏观数据 · 新闻验证 · 统计预测</p></div>',unsafe_allow_html=True)
+st.markdown('<div class="hero"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>历史脉络 · 宏观驱动 · 事件验证 · 价格位置</p></div>',unsafe_allow_html=True)
 snapshot = hub.snapshot()
 st.session_state.shown_revision = snapshot['revision']
 
@@ -270,7 +274,9 @@ def poll_updates():
 
 poll_updates()
 mkt, fred, news = unpack(snapshot['feeds'], period)
-market_tab, domestic_tab, macro_tab, news_tab, quality_tab = st.tabs(['国际行情与预测', '国内金价与比价', '宏观指标', '国际新闻', '数据诊断'])
+logic_tab, market_tab, domestic_tab, macro_tab, news_tab, quality_tab = st.tabs(['黄金逻辑与历史', '国际行情与预测', '国内金价与比价', '宏观指标', '国际新闻', '数据诊断'])
+with logic_tab:
+    render_logic(snapshot['feeds'])
 with market_tab:
     render_market(mkt, fred, snapshot['feeds'])
 with domestic_tab:
@@ -281,4 +287,4 @@ with news_tab:
     render_news(news, snapshot['feeds'])
 with quality_tab:
     render_quality(snapshot['feeds'], snapshot['storage_error'])
-st.caption('GOLD INTELLIGENCE V1.2.2 · 黄金研究工具 · 统计模型不保证未来价格。')
+st.caption('GOLD INTELLIGENCE V1.3 · 黄金研究工具 · 统计模型不保证未来价格。')

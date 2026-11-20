@@ -22,6 +22,21 @@ def settle(hub):
 
 
 class CollectionTests(unittest.TestCase):
+    def test_older_monthly_download_keeps_newer_history_and_original_fetch_time(self):
+        clock=[1000.]
+        responses=[{'observed_at':'2026-10-31','rows':[{'date':'2026-10-01','value':4105}]},
+                   {'observed_at':'2026-09-30','rows':[{'date':'2026-09-01','value':4319}]}]
+        with tempfile.TemporaryDirectory() as folder:
+            hub=DataHub(folder,[FeedSpec('history:gold','history',60,lambda:responses.pop(0))],clock=lambda:clock[0])
+            try:
+                hub.refresh_due();settle(hub);clock[0]+=61
+                hub.refresh_due();settle(hub)
+                result=hub.snapshot()['feeds']['history:gold']
+                self.assertEqual(result['data']['observed_at'],'2026-10-31')
+                self.assertEqual(result['fetched_at'],1000.)
+                self.assertIn('保留较新',result['error'])
+            finally:hub.close()
+
     def test_render_is_nonblocking_and_jobs_are_deduplicated(self):
         release = threading.Event()
         entered = threading.Event()

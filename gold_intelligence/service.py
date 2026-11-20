@@ -15,6 +15,7 @@ from typing import Callable
 
 from .domestic import fetch_sge, fetch_retail
 from .yields import fetch_h15, fetch_rate, fetch_treasury, merge_rate_payload
+from .history import fetch_long_history
 from .feeds import MARKETS, FeedError, fetch_fred, fetch_gdelt, fetch_market, fetch_quote, fetch_rss, parse_time
 
 
@@ -35,6 +36,7 @@ def default_specs():
         FeedSpec('cn:history', '国内黄金 Au99.99 日线', 3600, fetch_sge, 'sge', 5*86400),
         FeedSpec('cn:retail', '国内品牌渠道挂牌价', 1800, fetch_retail, 'smm', 3*86400),
         FeedSpec('quote', '黄金现货参考报价', 60, fetch_quote, 'gold-api', 15 * 60),
+        FeedSpec('history:gold', '1971年至今黄金月均价', 86400, fetch_long_history, 'github-history', 65*86400),
         FeedSpec('market:GC=F', MARKETS['GC=F'], 3600, partial(fetch_market, 'GC=F'), 'yahoo', 5 * 86400),
         FeedSpec('rates:treasury_real', '财政部10年实际收益率直连', 900, partial(fetch_treasury,'real'), 'treasury', 5*86400),
         FeedSpec('rates:treasury_nominal', '财政部2年/10年名义收益率直连', 900, partial(fetch_treasury,'nominal'), 'treasury', 5*86400),
@@ -141,6 +143,8 @@ class DataHub:
             fetched = self._clock()
             with self._lock:
                 e = self._entries[spec.key]
+                if spec.key == 'history:gold' and e['data'] and data.get('observed_at','') < e['data'].get('observed_at',''):
+                    raise FeedError('黄金月度来源返回较早月份，保留较新历史数据')
                 if spec.key.startswith('rates:'):
                     data = merge_rate_payload(e['data'],data,e['fetched_at'],fetched)
                 # A partial macro response must not delete successful older series.

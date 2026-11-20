@@ -30,7 +30,7 @@ def render_rate_card(rows,label,compact=False,feeds=None,sid=None):
         st.caption('独立收益率数据正在采集；若失败可查看数据诊断。')
         return
     bp=info['change_bp']
-    st.metric(label,f"{info['value']:.2f}%",f'{bp:+.1f} 基点' if bp is not None else None,delta_color='inverse')
+    st.metric(label,f"{info['value']:.2f}%",f'{bp:+.1f} 基点' if bp is not None and bp != 0 else None,delta_color='inverse')
     color='#FF4F76' if bp is not None and bp>0 else '#00E5A8' if bp is not None and bp<0 else '#F5C84C'
     arrow='↑' if bp is not None and bp>0 else '↓' if bp is not None and bp<0 else '→'
     previous=f"较 {info['previous_date']}" if info['previous_date'] else '仅一个有效观测值'

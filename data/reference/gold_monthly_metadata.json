@@ -1,0 +1,7 @@
+{
+  "snapshot_retrieved_at": "2026-11-20T11:42:50.174144+08:00",
+  "snapshot_note": "公开镜像历史快照；2026年8/9/10月的4411、4319、4105，与世界银行2026年11月3日月报抽样核对一致；未逐月独立复核整段历史。",
+  "verification_url": "https://thedocs.worldbank.org/en/doc/74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Pink-Sheet-November-2026.pdf",
+  "license_url": "https://github.com/datasets/gold-prices/blob/main/datapackage.json",
+  "source_class": "世界银行数据的第三方公开镜像，不是世界银行接口直连"
+}
