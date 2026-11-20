@@ -30,6 +30,6 @@ else:
     raise SystemExit('8501–8510 端口均被占用，请先关闭旧窗口。')
 PY
 )"
-echo "GOLD INTELLIGENCE V1.3：http://127.0.0.1:$GOLD_PORT"
+echo "GOLD INTELLIGENCE V1.4：http://127.0.0.1:$GOLD_PORT"
 echo "按 Control + C 停止。缓存保存在本文件夹 data/cache。"
 python -m streamlit run app.py --server.address=127.0.0.1 --server.port="$GOLD_PORT"

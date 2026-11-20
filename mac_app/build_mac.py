@@ -57,7 +57,7 @@ def make_offline():
     snapshot_time=datetime.fromisoformat(data['snapshot_retrieved_at']).strftime('%Y-%m-%d %H:%M 北京时间')
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>黄金逻辑与历史 · 离线资料</title><style>
     *{{box-sizing:border-box}}body{{margin:0;background:#0b1020;color:#e9eef7;font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}}main{{max-width:1180px;padding:42px 28px;margin:auto}}h1{{font-size:34px;line-height:1.25}}h2{{margin-top:42px}}h3{{font-size:17px}}a{{color:#80c1ff}}.tag{{color:#f4c76a;letter-spacing:2px;font-size:12px}}.notice{{border-left:4px solid #f4c76a;background:#142039;padding:14px 20px}}.muted{{color:#a6b5ca;font-size:14px}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}article,details,.chart{{background:#121d30;border:1px solid #29364c;border-radius:12px;padding:18px}}details{{margin:12px 0}}summary{{cursor:pointer;font-weight:600}}table{{width:100%;border-collapse:collapse}}td,th{{padding:8px 12px;text-align:left;border-bottom:1px solid #29364c}}.up{{color:#ff5779}}.down{{color:#00e5ad}}svg{{width:100%;height:auto}}@media(max-width:700px){{.grid{{grid-template-columns:1fr}}main{{padding:24px 16px}}}} </style></head><body><main>
-    <div class="tag">GOLD INTELLIGENCE · V1.3</div><h1>黄金逻辑与历史</h1><p class="notice">离线资料：历史数据截至 <b>{rows[-1]['date'][:7]}</b>，快照取得时间 {snapshot_time}。本页不联网更新，不代表当前行情。使用窗口顶部“在线分析中心”可进入完整功能。</p>
+    <div class="tag">GOLD INTELLIGENCE · V1.4</div><h1>黄金逻辑与历史</h1><p class="notice">离线资料：历史数据截至 <b>{rows[-1]['date'][:7]}</b>，快照取得时间 {snapshot_time}。本页不联网更新，不代表当前行情。使用窗口顶部“在线分析中心”可进入完整功能。</p>
     <h2>01 / 黄金为什么有价值</h2><p>{VALUE_TEXT}</p><p>{HISTORY_TEXT}</p><p class="muted"><a href="{BOE}">英格兰银行历史说明</a> · <a href="https://www.federalreservehistory.org/essays/bretton-woods-created">布雷顿森林体系</a></p><div class="grid">{cards}</div>
     <h2>02 / 1971年以来的价格轨迹</h2><p>黄金月均价 · 名义美元/金衡盎司 · 对数价格轴 · {len(rows)}个月</p><div class="chart">{svg_history(rows)}</div><p class="muted">蓝色节点为已整理的事件，定位于事件所属月份的月均价；不是事件当天成交价。最近月份 {rows[-1]['date'][:7]}：${rows[-1]['value']:,.2f}。长期价格会经历明显回撤，历史涨幅不能外推未来。</p>
     <h2>03 / 关键节点：事实与相反力量</h2><p class="muted">已整理{len(EVENTS)}个节点；不是全部历史事件。窗口为事件前一个月到事件月后第3个月的月均价变化，包含其他因素，不能归因为事件造成的收益。</p>{''.join(events)}
@@ -78,6 +78,15 @@ def build(output, skip_compile=False):
     executable=macos/'GoldIntelligence'
     build_dir=output/'build'
     build_dir.mkdir(exist_ok=True)
+    iconset=build_dir/'GoldIcon.iconset'
+    iconset.mkdir(exist_ok=True)
+    master=ROOT/'assets/gold-icon-v1.4.png'
+    for size in (16,32,128,256,512):
+        for scale in (1,2):
+            suffix='@2x' if scale==2 else ''
+            filename=iconset/f'icon_{size}x{size}{suffix}.png'
+            subprocess.run(['sips','-z',str(size*scale),str(size*scale),str(master),'--out',str(filename)],check=True,stdout=subprocess.DEVNULL)
+    subprocess.run(['sips','-s','format','icns',str(iconset/'icon_512x512.png'),'--out',str(resources/'GoldIcon.icns')],check=True,stdout=subprocess.DEVNULL)
     if not skip_compile:
         for architecture in ['arm64','x86_64']:
             subprocess.run(['xcrun','swiftc','-O','-module-cache-path',str(build_dir/'module-cache'),'-target',architecture+'-apple-macos12.0',str(ROOT/'mac_app/GoldIntelligence.swift'),'-o',str(build_dir/architecture)],check=True)
@@ -85,7 +94,7 @@ def build(output, skip_compile=False):
     elif not executable.exists():
         raise FileNotFoundError(executable)
     plist={'CFBundleName':'GOLD INTELLIGENCE','CFBundleDisplayName':'黄金智能分析中心','CFBundleIdentifier':'local.goldintelligence.desktop',
-           'CFBundleExecutable':'GoldIntelligence','CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.3.0','CFBundleVersion':'130',
+           'CFBundleExecutable':'GoldIntelligence','CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.4.0','CFBundleVersion':'140','CFBundleIconFile':'GoldIcon.icns',
            'LSMinimumSystemVersion':'12.0','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication'}
     (contents/'Info.plist').write_bytes(plistlib.dumps(plist))
     (offline/'index.html').write_text(make_offline(),encoding='utf-8')

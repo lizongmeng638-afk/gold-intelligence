@@ -1,6 +1,7 @@
-"""GOLD INTELLIGENCE V1.3: rendering reads local snapshots only."""
+"""GOLD INTELLIGENCE V1.4: rendering reads local snapshots only."""
 from datetime import datetime, timezone
 from html import escape
+import base64
 import math
 import os
 from pathlib import Path
@@ -12,18 +13,23 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from gold_intelligence.feeds import FRED_IDS, MARKETS, normalize_news, parse_time
-from gold_intelligence.models import classify_news, factor_cards, forecast_model
+from gold_intelligence.models import classify_news, forecast_model
 from gold_intelligence.service import DataHub, default_specs
 from gold_intelligence.yields import resolve_rates, rate_summary
 from gold_intelligence.yields_ui import render_rate_card, render_yields
 from gold_intelligence.domestic_ui import render_domestic
 from gold_intelligence.logic_ui import render_logic
+from gold_intelligence.intelligence import forecast_readiness, important_factors, completed_model_market
+from gold_intelligence.prediction_ui import render_prediction_center
+from gold_intelligence.assistant_ui import render_assistant
 
 BASE = Path(__file__).resolve().parent
 TZ = ZoneInfo('Asia/Shanghai')
-st.set_page_config(page_title='GOLD INTELLIGENCE', page_icon='🟡', layout='wide')
+ICON = BASE / 'assets' / 'gold-icon-256.png'
+st.set_page_config(page_title='GOLD INTELLIGENCE', page_icon=str(ICON), layout='wide')
 st.markdown('''<style>
 .stApp{background:#0b1020;color:#e9eef7}
+[data-testid="stMainBlockContainer"]{padding-top:2rem;padding-bottom:3rem}
 [data-testid="stHeader"]{background:#0b1020}
 [data-testid="stSidebar"]{background:#111a2b;color:#e9eef7}
 [data-testid="stSidebar"] :is(p,label,h1,h2,h3){color:#dbe4f2}
@@ -31,11 +37,16 @@ st.markdown('''<style>
 .stApp [data-testid="stMetricValue"]{font-size:clamp(1.15rem,2.1vw,2rem)!important;line-height:1.3}
 .stApp [data-testid="stMetricValue"] p{font-size:inherit!important}
 .stApp [data-testid="stMetricLabel"] p{white-space:normal!important;overflow:visible;text-overflow:clip}
-.hero{padding:22px 24px;border-radius:17px;background:linear-gradient(120deg,#172640,#111827 60%,#382b18);border:1px solid #66502d;margin-bottom:15px}
+.hero{padding:14px 20px;border-radius:17px;background:linear-gradient(120deg,#172640,#111827 60%,#382b18);border:1px solid #66502d;margin-bottom:12px}
 .kicker{color:#d8b36b;font-size:11px;letter-spacing:2px;font-weight:700}
-.hero h1{color:#f5f1e8;margin:4px 0;font-size:30px}.hero p{color:#afbdd1;margin:0}
+.hero h1{color:#f5f1e8;margin:4px 0;padding:0;line-height:1.2;font-size:28px}.hero p{color:#afbdd1;margin:0}
 .card{background:#121d30;border:1px solid #2a3852;border-radius:13px;padding:13px 15px;margin:8px 0}
 .small{color:#9eacc2;font-size:12px}
+.priority-alert{border:2px solid;border-radius:13px;background:#17233b;padding:16px 20px;margin:8px 0 16px;font-size:16px}
+.priority-alert b{font-size:19px}.priority-alert div{margin-top:6px}
+.factor-focus{border:2px solid;border-radius:14px;background:#142039;padding:18px;margin:6px 0 16px;min-height:250px}
+.factor-priority{font-size:16px;font-weight:700}.factor-value{font-size:30px;font-weight:700;margin:8px 0}
+.factor-focus p{margin:10px 0}.scenario-row{display:flex;gap:24px;flex-wrap:wrap;font-size:18px;font-weight:700;margin:12px 0}
 </style>''', unsafe_allow_html=True)
 
 
@@ -47,8 +58,12 @@ def get_hub(collection_version):
 
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=24)
-def cached_forecast(market, fred, reference):
-    return forecast_model(market, fred, reference)
+def cached_forecast(market, fred, reference, model_version):
+    result = forecast_model(market, fred, reference)
+    if result:
+        result['generated_at'] = datetime.now(timezone.utc).isoformat()
+        result['model_version'] = model_version
+    return result
 
 
 def stamp(value, with_time=True):
@@ -150,40 +165,6 @@ def render_market(mkt, fred, feeds):
     fig.add_trace(go.Scatter(x=hist.index,y=hist.values,name='GC=F 期货',line=dict(color='#d8b36b',width=2)))
     fig.add_trace(go.Scatter(x=hist.index,y=hist.rolling(20).mean(),name='20日均线',line=dict(color='#7e9bc8',dash='dot')))
     st.plotly_chart(plot_layout(fig), width='stretch')
-    st.markdown('### 03 / 关键驱动因素')
-    factors = factor_cards(mkt, fred)
-    for name, change, direction, desc in factors:
-        st.markdown(f'<div class="card"><b>{escape(name)}</b>　{escape(change)}<br><span class="small">黄金影响假设：{escape(direction)} · {escape(desc)}</span></div>', unsafe_allow_html=True)
-    if not factors:
-        st.info('驱动因素历史数据不足。')
-    st.markdown('### 04 / 量化预测与价格区间')
-    st.caption('预测基准是 GC=F 最新日线值，周期按交易日计算。以下为原 V1 统计模型的情景估计，尚未验证各周期区间覆盖率。')
-    last_date = gold.index[-1].date()
-    too_old = (datetime.now(TZ).date() - last_date).days > 7
-    fc = None if too_old else cached_forecast(mkt, fred, float(gold.iloc[-1]))
-    if too_old:
-        st.warning('黄金历史数据超过7天未更新，暂停生成价格预测。')
-    elif not fc:
-        st.info('历史样本或近期因子数据不足，暂不能生成预测。')
-    else:
-        a,b,c = st.columns(3)
-        a.metric('日线模型留出集方向准确率', f"{fc['acc']:.1%}" if fc['acc'] is not None else '样本不足')
-        b.metric('日波动率估计', f"{fc['vol']:.2%}")
-        c.metric('模型', fc['label'])
-        table = pd.DataFrame(fc['rows'])[['name','center','low80','high80','low95','high95','up','flat','down']]
-        table.columns = ['周期','中心参考价','理论80%下沿','理论80%上沿','理论95%下沿','理论95%上沿','上涨情景概率','震荡情景概率','下跌情景概率']
-        for col in table.columns[1:6]:
-            table[col] = table[col].map(lambda v:f'${v:,.2f}')
-        for col in table.columns[6:]:
-            table[col] = table[col].map(lambda v:f'{v:.1%}')
-        st.dataframe(table, hide_index=True, width='stretch')
-        fig = go.Figure(go.Scatter(x=gold.tail(90).index,y=gold.tail(90).values,name='期货历史',line=dict(color='#d8b36b')))
-        dates = [r['date'] for r in fc['rows']]
-        fig.add_trace(go.Scatter(x=dates,y=[r['high80'] for r in fc['rows']],line=dict(width=0),showlegend=False,hoverinfo='skip'))
-        fig.add_trace(go.Scatter(x=dates,y=[r['low80'] for r in fc['rows']],fill='tonexty',fillcolor='rgba(216,179,107,.16)',line=dict(width=0),name='理论80%情景区间'))
-        fig.add_trace(go.Scatter(x=dates,y=[r['center'] for r in fc['rows']],mode='lines+markers',name='中心情景',line=dict(color='#72b89c',dash='dash')))
-        st.plotly_chart(plot_layout(fig, 310), width='stretch')
-        st.caption(f"最近因子日期：{fc['feature_date']}。{fc['note']}")
     st.markdown('### 技术指标（期货日线）')
     delta = gold.diff()
     gain, loss = delta.clip(lower=0).rolling(14).mean(), -delta.clip(upper=0).rolling(14).mean()
@@ -240,22 +221,26 @@ def render_macro(fred, feeds):
     st.caption('月度指标的日期是统计期，通常以月初标注，不是发布时间。宏观指标每6小时检查一次，不随行情每分钟重复下载。')
 
 
-hub = get_hub('1.3.0')
-st.sidebar.markdown('## 🟡 GOLD INTELLIGENCE')
-st.sidebar.caption('历史逻辑 · 斐波那契 · 国内比价 · 宏观')
+hub = get_hub('1.4.0')
+st.sidebar.image(str(ICON), width=52)
+st.sidebar.markdown('## GOLD INTELLIGENCE')
+st.sidebar.caption('预测与提醒 · 站内问答 · 历史与比价')
 period_label = st.sidebar.selectbox('国际期货日线范围',['1年','2年','5年'],index=1)
 period = {'1年':1,'2年':2,'5年':5}[period_label]
 refresh = st.sidebar.selectbox('自动检查更新',['1分钟','5分钟','手动'],index=0)
 interval = 300 if refresh == '5分钟' else 60
-hub.refresh_due(quote_interval=interval)
+if refresh != '手动' or not st.session_state.get('initial_collection_v14'):
+    hub.refresh_due(quote_interval=interval)
+    st.session_state.initial_collection_v14 = True
 if st.sidebar.button('↻ 后台刷新',width='stretch'):
     count = hub.refresh_due(force=True)
     st.sidebar.info(f'已提交 {count} 个更新任务。缓存保留；正在运行及冷却中的任务不会重复请求。')
 st.sidebar.caption('现货60秒 · 日线1小时 · 收益率15分钟 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
 st.sidebar.divider()
-st.sidebar.caption('V1.3 · 黄金逻辑与历史复盘版')
+st.sidebar.caption('V1.4 · 预测提醒与对话版')
 st.sidebar.caption('无需付费 AI API；免费行情可能延迟。')
-st.markdown('<div class="hero"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>历史脉络 · 宏观驱动 · 事件验证 · 价格位置</p></div>',unsafe_allow_html=True)
+icon_data = base64.b64encode(ICON.read_bytes()).decode()
+st.markdown('<div class="hero"><img src="data:image/png;base64,' + icon_data + '" width="64" height="64" alt="黄金分析中心图标" style="float:right;margin-left:15px"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>未来区间 · 重要因子提醒 · 免费数据问答</p></div>',unsafe_allow_html=True)
 snapshot = hub.snapshot()
 st.session_state.shown_revision = snapshot['revision']
 
@@ -274,17 +259,29 @@ def poll_updates():
 
 poll_updates()
 mkt, fred, news = unpack(snapshot['feeds'], period)
-logic_tab, market_tab, domestic_tab, macro_tab, news_tab, quality_tab = st.tabs(['黄金逻辑与历史', '国际行情与预测', '国内金价与比价', '宏观指标', '国际新闻', '数据诊断'])
+full_market, _, _ = unpack(snapshot['feeds'], 5)
+full_market = completed_model_market(full_market)
+readiness = forecast_readiness(full_market, snapshot['feeds'])
+if refresh == '手动':
+    readiness['schedule'] = '当前为手动检查模式，点击“后台刷新”后检查；取得新数据时重新计算'
+forecast = cached_forecast(full_market, fred, readiness['reference'], '1.4.0') if readiness['ready'] else None
+factors = important_factors(full_market, snapshot['feeds'])
+context = {'market':full_market, 'fred':fred, 'feeds':snapshot['feeds'], 'readiness':readiness, 'forecast':forecast, 'factors':factors, 'news':news}
+market_tab, logic_tab, domestic_tab, macro_tab, news_tab, chat_tab, quality_tab = st.tabs(['预测中心', '逻辑与历史', '国内比价', '宏观指标', '国际新闻', '对话助手', '数据诊断'])
+with market_tab:
+    render_prediction_center(full_market, snapshot['feeds'], readiness, forecast, factors)
+    with st.expander('当前行情、走势图与技术指标'):
+        render_market(mkt, fred, snapshot['feeds'])
 with logic_tab:
     render_logic(snapshot['feeds'])
-with market_tab:
-    render_market(mkt, fred, snapshot['feeds'])
 with domestic_tab:
     render_domestic(snapshot['feeds'])
 with macro_tab:
     render_macro(fred, snapshot['feeds'])
 with news_tab:
     render_news(news, snapshot['feeds'])
+with chat_tab:
+    render_assistant(context)
 with quality_tab:
     render_quality(snapshot['feeds'], snapshot['storage_error'])
-st.caption('GOLD INTELLIGENCE V1.3 · 黄金研究工具 · 统计模型不保证未来价格。')
+st.caption('GOLD INTELLIGENCE V1.4 · 黄金研究工具 · 统计模型不保证未来价格。')

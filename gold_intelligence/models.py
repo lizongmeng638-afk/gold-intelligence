@@ -9,6 +9,8 @@ def normal_cdf(x,mu,sigma):
     return .5*(1+math.erf((x-mu)/(max(sigma,1e-8)*math.sqrt(2))))
 
 def forecast_model(mkt, fred, spot):
+    if 'Gold' not in mkt or not np.isfinite(spot) or spot<=0:
+        return None
     gold=mkt["Gold"].dropna()
     if len(gold)<90: return None
     x=pd.DataFrame(index=mkt.index)
@@ -19,11 +21,14 @@ def forecast_model(mkt, fred, spot):
         x["dxy_r1"]=mkt["DXY"].pct_change(fill_method=None)
         x["dxy_r5"]=mkt["DXY"].pct_change(5, fill_method=None)
     real=fred.get("DFII10",pd.Series(dtype=float))
+    real_coverage=False
     if len(real):
         ry=real.reindex(real.index.union(x.index)).sort_index().ffill().reindex(x.index)
-        x["real_yield_d1"]=ry.diff()
-        x["real_yield_d5"]=ry.diff(5)
-    elif "US10Y" in mkt and mkt["US10Y"].notna().sum()>60:
+        real_coverage=ry.diff(5).notna().sum()>=max(60,int(len(x)*.55))
+        if real_coverage:
+            x["real_yield_d1"]=ry.diff()
+            x["real_yield_d5"]=ry.diff(5)
+    if not real_coverage and "US10Y" in mkt and mkt["US10Y"].notna().sum()>60:
         x["nominal_yield_d1"]=mkt["US10Y"].diff()
         x["nominal_yield_d5"]=mkt["US10Y"].diff(5)
     for col,prefix in [("VIX","vix"),("WTI","oil"),("GLD","gld")]:
@@ -38,12 +43,15 @@ def forecast_model(mkt, fred, spot):
     X=train.drop(columns="target"); Y=train["target"]
     split=max(40,min(int(len(train)*.8),len(train)-10))
     pipe=Pipeline([("scale",StandardScaler()),("ridge",Ridge(alpha=8))])
+    baseline_acc=None
     try:
         pipe.fit(X.iloc[:split],Y.iloc[:split])
         predv=pipe.predict(X.iloc[split:])
         err=Y.iloc[split:].values-predv
         sigma=float(np.std(err,ddof=1)) if len(err)>5 else float(Y.std())
         acc=float(np.mean(np.sign(predv)==np.sign(Y.iloc[split:].values))) if len(err)>5 else None
+        majority=1 if (Y.iloc[:split]>0).sum()>=(Y.iloc[:split]<0).sum() else -1
+        baseline_acc=float(np.mean(majority==np.sign(Y.iloc[split:].values))) if len(err)>5 else None
         pipe.fit(X,Y)
         pred=float(pipe.predict(x.iloc[[-1]][X.columns])[0])
         label="Ridge多因子模型"
@@ -64,9 +72,11 @@ def forecast_model(mkt, fred, spot):
             "low80":spot*math.exp(mu-1.2816*sig),"high80":spot*math.exp(mu+1.2816*sig),
             "low95":spot*math.exp(mu-1.96*sig),"high95":spot*math.exp(mu+1.96*sig),
             "up":p_up/total,"flat":p_flat/total,"down":p_down/total,
+            "flat_low":spot*math.exp(-.35*sig),"flat_high":spot*math.exp(.35*sig),
             "date":gold.index[-1]+pd.offsets.BDay(h)})
     if x.index[-1] < gold.index[-1] - pd.Timedelta(days=7): return None
-    return {"rows":rows,"vol":vol,"acc":acc,"label":label,"feature_date":str(x.index[-1].date()),
+    return {"rows":rows,"vol":vol,"acc":acc,"baseline_acc":baseline_acc,"validation_count":len(Y.iloc[split:]),
+        "training_count":len(train),"feature_columns":list(X.columns) if label=='Ridge多因子模型' else ['gold_r20'],"label":label,"feature_date":str(x.index[-1].date()),
         "note":"周期按交易日计算；日期仅排除周末，未纳入交易所节假日。方向准确率仅为日线留出集结果，非各周期预测胜率，宏观历史值可能经过修订。短期使用时间顺序验证的Ridge多因子模型；长周期对短期漂移做衰减，区间由历史残差波动扩展。新闻事件暂不直接换算成固定涨跌幅。"}
 
 def factor_cards(mkt, fred):

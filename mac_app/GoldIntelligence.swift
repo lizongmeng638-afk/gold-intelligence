@@ -103,8 +103,8 @@ final class GoldApplication: NSObject, NSApplicationDelegate, WKNavigationDelega
     @objc func openBrowser() { NSWorkspace.shared.open(site) }
     @objc func about() {
         let alert = NSAlert()
-        alert.messageText = "GOLD INTELLIGENCE V1.3"
-        alert.informativeText = "黄金智能分析中心 Mac 桌面版。在线功能使用现有 Streamlit 网站，无需 Python。离线资料为随包历史快照，不能当作最新行情。\n\n本应用未进行 Apple 公证。"
+        alert.messageText = "GOLD INTELLIGENCE V1.4"
+        alert.informativeText = "黄金智能分析中心 Mac 桌面版。在线功能使用现有 Streamlit 网站，含预测与免费站内问答，无需 Python。离线资料为随包历史快照，不能当作最新行情。\n\n本应用未进行 Apple 公证。"
         alert.runModal()
     }
 

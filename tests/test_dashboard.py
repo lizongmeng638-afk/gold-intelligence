@@ -67,7 +67,8 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(len(at.exception),0,str(at.exception))
             labels=[x.label for x in at.metric]
             self.assertIn('黄金现货参考 / USD每盎司',labels)
-            self.assertIn('日线模型留出集方向准确率',labels)
+            self.assertIn('中心情景价',labels)
+            self.assertIn('重要因子提醒',' '.join(x.value for x in at.markdown))
             self.assertGreaterEqual(len(at.dataframe),3)
         finally:
             hub.close()

@@ -1,8 +1,15 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "platform": "macOS 12+ universal arm64/x86_64",
-  "sha256": "700f2a14d24cfc68c4ddf8022422d175d650ec63ab5a960cf751e1db52ed81eb",
-  "bytes": 89335,
-  "runtime": "WebKit native shell; live features require Streamlit cloud; offline history snapshot through 2026-10",
+  "sha256": "b190a1a6de68053d1c5dfaa543a7cc46c0f06fafb7abc63d1db9b288da1e8ae8",
+  "bytes": 387740,
+  "icon": "GoldIcon.icns (512px), generated master PNG in assets",
+  "features": [
+    "forecast center",
+    "important factor alerts",
+    "free site-data Q&A",
+    "offline history"
+  ],
+  "runtime": "WebKit native shell; forecasts and Q&A require existing Streamlit cloud; offline history through 2026-10",
   "signing": "ad-hoc; not Apple notarized"
 }
