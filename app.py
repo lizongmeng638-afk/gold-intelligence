@@ -40,7 +40,7 @@ st.markdown('''<style>
 
 
 @st.cache_resource
-def get_hub():
+def get_hub(collection_version):
     cache_path = os.environ.get('GOLD_CACHE_DIR', str(BASE / 'data' / 'cache'))
     specs = default_specs()  # V1.3: long history plus independent Treasury freshness feeds
     return DataHub(cache_path, specs=specs)
@@ -240,7 +240,7 @@ def render_macro(fred, feeds):
     st.caption('月度指标的日期是统计期，通常以月初标注，不是发布时间。宏观指标每6小时检查一次，不随行情每分钟重复下载。')
 
 
-hub = get_hub()
+hub = get_hub('1.3.0')
 st.sidebar.markdown('## 🟡 GOLD INTELLIGENCE')
 st.sidebar.caption('历史逻辑 · 斐波那契 · 国内比价 · 宏观')
 period_label = st.sidebar.selectbox('国际期货日线范围',['1年','2年','5年'],index=1)
