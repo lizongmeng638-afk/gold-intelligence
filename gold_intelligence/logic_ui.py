@@ -34,7 +34,12 @@ def history_chart(rows, events, logarithmic=True):
                             name='已整理的历史事件', marker=dict(size=9,color='#66B7FF',symbol='diamond'),
                             customdata=[[e['date'],e['title']] for e in marks],
                             hovertemplate='%{customdata[0]}<br>%{customdata[1]}<br>当月均价 $%{y:,.2f}<extra></extra>'))
-    fig.update_yaxes(type='log' if logarithmic else 'linear')
+    fig.update_yaxes(type='log' if logarithmic else 'linear',tickformat=',.0f')
+    if logarithmic:
+        import math
+        low,high=min(r['value'] for r in rows),max(r['value'] for r in rows)
+        ticks=[m*10**n for n in range(math.floor(math.log10(low)),math.ceil(math.log10(high))+1) for m in (1,2,5) if low<=m*10**n<=high]
+        fig.update_yaxes(tickmode='array',tickvals=ticks,ticktext=[f'{v:,.0f}' for v in ticks])
     fig.update_xaxes(rangeslider=dict(visible=True,thickness=.08))
     return layout(fig,450)
 
