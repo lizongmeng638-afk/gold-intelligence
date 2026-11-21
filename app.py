@@ -232,7 +232,7 @@ def render_macro(fred, feeds):
     st.caption('月度指标的日期是统计期，通常以月初标注，不是发布时间。宏观指标每6小时检查一次，不随行情每分钟重复下载。')
 
 
-hub = get_hub('1.5.0')
+hub = get_hub('1.5.1')
 st.sidebar.image(str(ICON), width=52)
 st.sidebar.markdown('## GOLD INTELLIGENCE')
 st.sidebar.caption('预测 · PPI/PMI · 官员讲话 · 历史与比价')

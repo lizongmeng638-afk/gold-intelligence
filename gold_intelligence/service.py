@@ -135,7 +135,7 @@ class DataHub:
                 if force:
                     if e['attempt_at'] and now - e['attempt_at'] < 30:
                         continue
-                elif now < max(e['next_attempt'], e['fetched_at'] + ttl):
+                elif now < max(e['next_attempt'], e['fetched_at'] + ttl) and not (key.startswith('speeches:') and e['data'] and e['data'].get('parser_version')!=2):
                     continue
                 e.update(running=True, attempt_at=now)
                 self._revision += 1

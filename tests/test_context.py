@@ -13,7 +13,7 @@ from gold_intelligence.event_analysis import analyze_message,message_key,recent_
 from gold_intelligence.feeds import FeedError
 from gold_intelligence.journal import AnalysisJournal,snapshot_diff,fingerprint,snapshot_payload
 from gold_intelligence.models import classify_news
-from gold_intelligence.speeches import guessed_date,prose_date,source_url,speech_summary,rss_speeches,fetch_speeches,message_time
+from gold_intelligence.speeches import guessed_date,prose_date,source_url,speech_summary,rss_speeches,fetch_speeches,message_time,collected_speeches
 
 
 class EconomicTests(unittest.TestCase):
@@ -87,6 +87,12 @@ class SpeechTests(unittest.TestCase):
     def test_source_date_without_time_is_not_displayed_as_beijing_eight_am(self):
         text=message_time({'date':'2026-11-19T00:00:00+00:00','time_kind':'官方网页日期，精确时刻待核验'})
         self.assertIn('2026-11-19',text);self.assertNotIn('08:00',text);self.assertNotIn('北京时间',text)
+
+    def test_older_cached_parser_summary_is_not_reused_as_current_analysis(self):
+        item={'url':'https://www.federalreserve.gov/a','title':'Cook, remarks','speaker':'Cook','summary':'old rule','stance':'偏鹰线索','full_text_obtained':True,'date':(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()}
+        result=collected_speeches({'speeches:board':{'data':{'items':[item]}}})
+        self.assertFalse(result[0]['full_text_obtained']);self.assertEqual(result[0]['stance'],'尚待重新核验')
+        self.assertTrue(item['full_text_obtained'])
 
     def test_body_failure_is_explicit_not_a_fake_full_summary(self):
         date=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()

@@ -79,7 +79,7 @@ def prose_date(text):
     return datetime.strptime(match[0],'%B %d, %Y').date().isoformat()
 
 
-FULL_NAMES=('Philip N. Jefferson','Kevin Warsh','Christopher J. Waller','Michelle W. Bowman','Lisa D. Cook','Michael S. Barr','Jerome H. Powell','John C. Williams','Susan M. Collins','Anna Paulson','Beth M. Hammack','Thomas I. Barkin','Austan D. Goolsbee','Austan Goolsbee','Alberto G. Musalem','Alberto Musalem','Neel Kashkari','Jeffrey R. Schmid','Lorie K. Logan','Mary C. Daly')
+FULL_NAMES=('Philip N. Jefferson','Kevin Warsh','Christopher J. Waller','Michelle W. Bowman','Lisa D. Cook','Michael S. Barr','Jerome H. Powell','John C. Williams','Susan M. Collins','Anna Paulson','Beth M. Hammack','Beth Hammack','Thomas I. Barkin','Thomas Barkin','Tom Barkin','Austan D. Goolsbee','Austan Goolsbee','Alberto G. Musalem','Alberto Musalem','Neel Kashkari','Jeffrey R. Schmid','Jeffrey Schmid','Jeff Schmid','Lorie K. Logan','Lorie Logan','Mary C. Daly')
 
 
 def named_speaker(text):
@@ -184,7 +184,7 @@ def fetch_speeches(key):
             # ordering previously elevated 2005 archive articles above 2026.
             years=[int(v) for v in re.findall(r'(?<!\d)(20\d{2})(?!\d)',target)]
             if years and max(years)<datetime.now(timezone.utc).year-1:continue
-            speaker=named_speaker(near) or (link['title'].split(':',1)[0] if ':' in link['title'] else '待识别')
+            speaker=named_speaker(near) or (link['title'].split(':',1)[0] if key=='newyork' and ':' in link['title'] else '待识别')
             candidates[target]={'url':target,'title':link['title'],'date':date,'speaker':speaker,'time_kind':'官方网页日期，精确时刻待核验'}
         items=list(candidates.values())[:8]
     if not items:raise FeedError(name+'未取得可解析的讲话条目；不等于没有讲话')
@@ -202,7 +202,7 @@ def fetch_speeches(key):
             try:details[i]=future.result()
             except Exception as exc:details[i]={'body_error':str(exc)[:180]}
     for index,item in enumerate(items):
-        item.update(source=name,source_key=key,summary='仅取得标题/索引，本轮未取得正文，不据此判断鹰鸽。',
+        item.update(source=name,source_key=key,parser_version=2,summary='仅取得标题/索引，本轮未取得正文，不据此判断鹰鸽。',
                     stance='尚未核验正文',topics=[],evidence=[],full_text_obtained=False,method='标题或索引记录')
         if index in details:
             detail=dict(details[index]);speaker=detail.pop('speaker',None)
@@ -217,7 +217,7 @@ def fetch_speeches(key):
     if not items:raise FeedError(name+'未取得90天内有效条目；不等于没有讲话')
     items.sort(key=lambda i:i.get('date') or '',reverse=True)
     observed=max((item['date'] for item in items if item.get('date')),default=None)
-    return {'items':items,'source':name+'官方讲话','url':url,'observed_at':observed,
+    return {'items':items,'parser_version':2,'source':name+'官方讲话','url':url,'observed_at':observed,
             'coverage_note':'覆盖成功取得的官方条目，不代表全部采访或未公布发言。理事会尝试按每位官员最新一篇读取正文（最多7位），地区分行尝试最新两篇；正文缓存15分钟。'}
 
 
@@ -225,7 +225,12 @@ def collected_speeches(feeds):
     items={}
     for key,feed in feeds.items():
         if not key.startswith('speeches:'):continue
-        for item in (feed.get('data') or {}).get('items',[]):
+        for original in (feed.get('data') or {}).get('items',[]):
+            item=dict(original)
+            if item.get('parser_version')!=2:
+                item.update(summary='缓存中的规则摘要版本较旧，等待重新核验正文。',stance='尚待重新核验',full_text_obtained=False,evidence=[],method='旧缓存，未作本轮正文分析')
+            if item.get('source_key')!='newyork' and item.get('title','').startswith(item.get('speaker','')+':'):
+                item['speaker']='待识别'
             if item.get('date'):
                 try:
                     if not 0<=(datetime.now(timezone.utc)-parse_time(item['date'])).total_seconds()<=90*86400:continue
