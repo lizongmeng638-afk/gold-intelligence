@@ -13,7 +13,7 @@ from gold_intelligence.event_analysis import analyze_message,message_key,recent_
 from gold_intelligence.feeds import FeedError
 from gold_intelligence.journal import AnalysisJournal,snapshot_diff,fingerprint,snapshot_payload
 from gold_intelligence.models import classify_news
-from gold_intelligence.speeches import guessed_date,prose_date,source_url,speech_summary,rss_speeches,fetch_speeches
+from gold_intelligence.speeches import guessed_date,prose_date,source_url,speech_summary,rss_speeches,fetch_speeches,message_time
 
 
 class EconomicTests(unittest.TestCase):
@@ -77,6 +77,16 @@ class SpeechTests(unittest.TestCase):
         xml=f'<rss><channel><item><title>Cook, remarks</title><link>https://www.federalreserve.gov/a</link><pubDate>{old}</pubDate></item><item><link>https://www.federalreserve.gov/future</link><pubDate>{future}</pubDate></item><item><link>https://other.example/a</link><pubDate>{old}</pubDate></item></channel></rss>'
         rows=rss_speeches(xml,'https://www.federalreserve.gov/feeds/a.xml')
         self.assertEqual(len(rows),1);self.assertEqual(rows[0]['speaker'],'Cook')
+
+    def test_market_expectations_are_not_the_speakers_policy_preference(self):
+        s=speech_summary('In October, markets expected further tightening, so the pause did not leave policy behind.','')
+        self.assertEqual(s['stance'],'未识别明确利率方向')
+        s=speech_summary('I preferred to raise the target range another 1/4 percentage point. Financial stability remains important.','')
+        self.assertIn('历史投票',s['summary'])
+
+    def test_source_date_without_time_is_not_displayed_as_beijing_eight_am(self):
+        text=message_time({'date':'2026-11-19T00:00:00+00:00','time_kind':'官方网页日期，精确时刻待核验'})
+        self.assertIn('2026-11-19',text);self.assertNotIn('08:00',text);self.assertNotIn('北京时间',text)
 
     def test_body_failure_is_explicit_not_a_fake_full_summary(self):
         date=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()

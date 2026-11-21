@@ -7,7 +7,7 @@ import streamlit as st
 from .activity import activity_assessment
 from .event_analysis import stress_range
 from .intelligence import local_stamp
-from .speeches import SOURCES
+from .speeches import SOURCES,message_time
 from .yields import resolve_rates,rate_summary
 
 
@@ -91,7 +91,7 @@ def render_refresh_comparison(context):
         if diff['new'] or diff['revised']:
             with st.expander('本轮新收录与修订的消息'):
                 for item in (diff['new']+diff['revised'])[:12]:
-                    st.markdown(f"- {item['source']} · {local_stamp(item.get('date'))} 北京时间 · [{item['title']}]({item['url']})")
+                    st.markdown(f"- {item['source']} · {message_time(item)} · [{item['title']}]({item['url']})")
     journal=context.get('journal')
     if journal:
         with st.expander('回看之前保存的预测与消息'):
@@ -147,7 +147,7 @@ def render_message_center(context):
         for item in selected[:12]:
             with st.container(border=True):
                 st.markdown(f"**{item.get('speaker_zh') or item.get('speaker','待识别')} · {item['title']}**")
-                st.caption(item['source']+' · '+(local_stamp(item.get('date'))+' 北京时间' if item.get('date') else '发布时间未核验'))
+                st.caption(item['source']+' · '+message_time(item))
                 st.write(item.get('summary','暂未取得摘要'))
                 st.markdown('**政策措辞识别：'+item.get('stance','待判断')+'**')
                 if item.get('topics'):st.caption('正文议题：'+'、'.join(item['topics']))
@@ -175,7 +175,7 @@ def render_message_center(context):
         a=item['analysis']
         with st.container(border=True):
             st.markdown(f"**{item['title']}**")
-            st.caption(f"{item['source']} · {local_stamp(item['date'])} 北京时间 · {item.get('time_kind','来源时间')}")
+            st.caption(f"{item['source']} · {message_time(item)} · {item.get('time_kind','来源时间')}")
             st.write(f"{a['category']} · {a['direction']}")
             st.write('传导假设：'+a['path'])
             st.write('相反力量：'+a['counter'])

@@ -92,19 +92,24 @@ def speech_summary(body,title):
     lower=body.lower()
     topics=[]
     for label,terms in [('通胀与物价',('inflation','price stability')),('利率与政策',('monetary policy','policy rate','interest rate')),('就业与增长',('employment','economic growth','labor market')),('能源与地缘冲击',('oil','energy prices','geopolitical','supply shock')),('金融稳定',('financial stability','capital buffer')),('支付与技术',('payments','tokeniz','artificial intelligence','productivity'))]:
-        if any(t in lower for t in terms):topics.append(label)
+        if any(re.search(r'\b'+re.escape(t),lower) for t in terms):topics.append(label)
     hawk=('further tightening','additional rate increases','higher for longer','raise interest rates','raise the target range','inflation remains too high','not yet sufficiently restrictive')
     dove=('lower the target range','cut interest rates','reduce interest rates','rate cuts are appropriate','begin reducing rates','ease monetary policy')
     def present(phrase):
         for match in re.finditer(re.escape(phrase),lower):
             before=lower[max(0,match.start()-55):match.start()]
+            sentence_start=max(lower.rfind('.',0,match.start()),lower.rfind('!',0,match.start()),lower.rfind('?',0,match.start()))+1
+            sentence=lower[sentence_start:match.start()]
+            if re.search(r'\b(?:markets?|investors?|analysts?)\s+(?:had\s+)?(?:expected|anticipated|priced|forecast)',sentence):continue
             if not re.search(r'\b(?:not|no|never|unlikely)\b[^.!?]{0,45}$',before):return True
         return False
     h=[p for p in hawk if present(p)];d=[p for p in dove if present(p)]
     stance='鹰鸽线索并存' if h and d else '偏鹰线索' if h else '偏鸽线索' if d else '未识别明确利率方向'
     if 'supply shock' in lower and 'demand shock' in lower:
         summary='正文区分供给冲击与需求冲击；两类冲击对增长、物价和政策的作用可能不同，不能仅凭能源或通胀上升直接推断加息。'
-    elif 'financial stability' in lower:
+    elif h or d:
+        summary='正文出现'+('偏鹰与偏鸽' if h and d else '偏鹰' if h else '偏鸽')+'政策措辞线索；需要区分历史投票、个人偏好、条件假设与未来承诺，不能直接推断下一次会议行动。'
+    elif 'financial stability' in lower and len(topics)<=2:
         summary='正文讨论金融稳定风险；金融稳定讲话不自动等于下一次利率决定。'
     elif topics:
         summary='正文涉及'+'、'.join(topics[:3])+'；以下为规则识别的议题和措辞，需要结合完整语境核对。'
@@ -116,6 +121,15 @@ def speech_summary(body,title):
             evidence=[' '.join(sentence.split()[:20])+(' …' if len(sentence.split())>20 else '')];break
     return {'summary':summary,'topics':topics,'stance':stance,'hawkish_phrases':h,'dovish_phrases':d,'evidence':evidence,
             'method':'官方正文规则摘要，非AI深度解读','full_text_obtained':True}
+
+
+def message_time(item):
+    """Preserve a date-only source without inventing a UTC or Beijing time."""
+    if not item.get('date'):return '发布时间未核验'
+    if '精确时刻待核验' in item.get('time_kind',''):
+        return str(item['date'])[:10]+'（官方网页日期；具体时刻未提供）'
+    from .intelligence import local_stamp
+    return local_stamp(item['date'])+' 北京时间'
 
 
 @lru_cache(maxsize=180)

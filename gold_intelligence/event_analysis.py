@@ -44,7 +44,7 @@ def recent_messages(news,speeches,now=None,days=7):
     for original in list(news)+list(speeches):
         if not original.get('date'):continue
         text=(original.get('title','')+' '+original.get('description','')).lower()
-        relevant=original.get('source_key') or re.search(r'\b(?:gold|bullion|fomc|fed|federal reserve|interest rates?|monetary|inflation|ppi|pmi|cpi|pce|payrolls?|unemployment|jobless|dollar|treasury|yields?|central banks?|economy|economic|tariffs?|sanctions?|wars?|missiles?|attacks?|invasion|conflicts?|ceasefire|truce|oil|crude|energy|natural gas|opec|hormuz|recession|financial stability)\b',text)
+        relevant=original.get('source_key') or re.search(r'\b(?:gold|bullion|fomc|interest rates?|monetary|inflation|ppi|pmi|cpi|pce|payrolls?|unemployment|jobless|dollar|treasury|yields?|central banks?|economy|economic|tariffs?|sanctions?|wars?|missiles?|attacks?|invasion|conflicts?|ceasefire|truce|oil|crude|energy|natural gas|opec|hormuz|recession|financial stability)\b',text)
         if not relevant:continue
         try:age=(now-parse_time(original['date'])).total_seconds()
         except (ValueError,TypeError):continue

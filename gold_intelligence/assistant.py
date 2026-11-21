@@ -10,6 +10,7 @@ from .intelligence import factor_conclusion, local_stamp, model_groups
 from .models import classify_news
 from .rate_freshness import rate_freshness
 from .yields import resolve_rates, rate_summary
+from .speeches import message_time
 
 
 def horizon_from_text(question):
@@ -180,7 +181,7 @@ def speech_answer(context,question):
         person=item.get('speaker_zh') or item.get('speaker','待识别')
         if person in people:continue
         people.add(person)
-        lines.append(f"**{person}** · {local_stamp(item.get('date'))} 北京时间\n\n{item['title']}：{item.get('summary','未取得正文')}\n\n措辞识别：{item.get('stance','尚待核验')}；{item.get('method','标题记录')}。[官方原文]({item['url']})")
+        lines.append(f"**{person}** · {message_time(item)}\n\n{item['title']}：{item.get('summary','未取得正文')}\n\n措辞识别：{item.get('stance','尚待核验')}；{item.get('method','标题记录')}。[官方原文]({item['url']})")
         if len(people)>=4:break
     if not people:lines.append('没有找到该官员可展示的已取得记录，不推断其没有讲话。')
     lines.append('这是免费规则摘要；个人发言不是FOMC集体决定，鹰鸽条数不能换算成加息概率。')

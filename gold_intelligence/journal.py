@@ -17,7 +17,7 @@ def snapshot_payload(context):
         rows.append({k:(str(v.date()) if k=='date' and hasattr(v,'date') else v) for k,v in r.items()})
     messages=[]
     for item in context.get('messages',[]):
-        messages.append({k:item.get(k) for k in ('key','url','title','date','source','speaker','stance','full_text_obtained','summary','analysis') if item.get(k) is not None})
+        messages.append({k:item.get(k) for k in ('key','url','title','date','time_kind','source','speaker','stance','full_text_obtained','summary','analysis') if item.get(k) is not None})
     return {'reference_date':context['readiness'].get('reference_date'),'reference':context['readiness'].get('reference'),
             'forecast_rows':rows,'model_version':(forecast or {}).get('model_version'),'model_generated_at':(forecast or {}).get('generated_at'),
             'feature_date':(forecast or {}).get('feature_date'),'messages':messages,
