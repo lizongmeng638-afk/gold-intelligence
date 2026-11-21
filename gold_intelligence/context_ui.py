@@ -71,6 +71,7 @@ def render_refresh_comparison(context):
     current=state['current'];previous=state.get('previous');diff=state['diff']
     st.caption(f"已保存快照 #{current['id']}：{local_stamp(current['captured_at'])} 北京时间。快照保存时间不是消息发生或模型生成时间。")
     if state['pending']:st.info('本轮数据仍在采集或等待合并；下面是最近一次已保存快照，不冒充当前全部来源已更新。')
+    elif not state['wrote']:st.caption('当前数据与最近快照一致，未重复保存；下方对照最近两次有变化的快照。')
     if diff['first']:st.write(diff['message'])
     else:
         a,b,c=st.columns(3)
@@ -109,7 +110,7 @@ def render_refresh_comparison(context):
 
 
 def render_news_stress(context):
-    st.markdown('### 消息面情景：检验假设，不伪造预测修正')
+    st.markdown('### 消息面与风险情景')
     messages=context.get('messages',[])
     groups={}
     for item in messages:
