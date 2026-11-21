@@ -2,6 +2,7 @@
 import re
 
 from .domestic import comparable
+from .activity import activity_assessment
 from .feeds import safe_url
 from .gold_logic import DRIVERS, EVENTS
 from .history import choose_history, fibonacci
@@ -149,10 +150,82 @@ def news_answer(context):
     return '\n\n'.join(lines)
 
 
+def activity_answer(context,question):
+    metrics=context.get('activity',{})
+    if not metrics:return '当前没有可核对的PPI/PMI观测，不用标题判断数据强弱。'
+    both='ppi' in question and 'pmi' in question
+    kinds=['ppi','manufacturing','services'] if both or ('ppi' not in question and 'pmi' not in question) else ['ppi'] if 'ppi' in question else ['manufacturing','services']
+    lines=['**增长和通胀分开判断。** PMI高于50表示对应行业扩张；PPI衡量生产端价格。']
+    for kind in kinds:
+        item=metrics[kind];assessment=activity_assessment(item,kind)
+        if kind=='ppi':
+            mom=f"{item['mom']:+.1f}%" if item.get('mom') is not None else '暂无'
+            yoy=f"{item['yoy']:+.1f}%" if item.get('yoy') is not None else '暂无'
+            number=f'季调环比 {mom}，未季调同比 {yoy}'
+        else:number=f"{item['value']:.1f}"+(f"，上期 {item['previous']:.1f}" if item.get('previous') is not None else '')
+        quality='已核对快照，本轮未核验新发布' if item.get('snapshot') else '官方接口观测；来源最近检查 '+local_stamp(item.get('last_checked'))+' 北京时间'
+        lines.append(f"**{item['source']} · {item['period']}**：{number}。**{assessment['label']}**。{quality}。[官方来源]({item['url']})\n\n黄金传导：{assessment['path']}")
+    lines.append('未接入可靠的一致预期，不宣称“超预期”。PMI不是GDP增速，PPI不是美联储2%目标的直接口径；还要观察美元和实际收益率。')
+    return '\n\n'.join(lines)
+
+
+def speech_answer(context,question):
+    speeches=context.get('speeches',[])
+    if not speeches:return '本轮还未取得可核对的官方讲话。可在“消息与讲话”查看来源覆盖和失败原因；不会用标题伪装成全文摘要。'
+    from .speeches import NAMES
+    tokens=[english.lower() for english,chinese in NAMES.items() if chinese in question or english.lower() in question]
+    selected=[i for i in speeches if not tokens or any(t in (i.get('speaker','')+' '+i['title']).lower() for t in tokens)]
+    people=set();lines=['**以下是已取得的官方记录，不代表全部采访或即席发言。**']
+    for item in selected:
+        person=item.get('speaker_zh') or item.get('speaker','待识别')
+        if person in people:continue
+        people.add(person)
+        lines.append(f"**{person}** · {local_stamp(item.get('date'))} 北京时间\n\n{item['title']}：{item.get('summary','未取得正文')}\n\n措辞识别：{item.get('stance','尚待核验')}；{item.get('method','标题记录')}。[官方原文]({item['url']})")
+        if len(people)>=4:break
+    if not people:lines.append('没有找到该官员可展示的已取得记录，不推断其没有讲话。')
+    lines.append('这是免费规则摘要；个人发言不是FOMC集体决定，鹰鸽条数不能换算成加息概率。')
+    return '\n\n'.join(lines)
+
+
+def transmission_answer(context,question):
+    lines=[]
+    if any(k in question for k in ['加息','降息','利率预期','fedwatch']):
+        lines.append('**加息预期会影响黄金。** 若预期推高实际收益率或美元，通常形成压力；若变化已经被价格消化，黄金未必继续下跌。')
+        lines.append(rate_answer(context,'2年期名义收益率'))
+        lines.append('2年期名义收益率只是观察政策预期的代理；本版没有可靠的FedWatch概率序列，不把收益率或讲话条数当作加息百分比。[CME原始工具](https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool)')
+    if any(k in question for k in ['能源','原油','石油','油价','天然气']):
+        lines.append('**能源有双向传导。** 油气上涨可能强化通胀保值需求，也可能提高紧缩预期；供给冲击还可能削弱增长。油价与金价没有固定同涨同跌规律。')
+        market=context['market']
+        for column,label in [('WTI','WTI原油'),('Brent','Brent原油'),('NaturalGas','美国天然气期货')]:
+            series=market[column].dropna() if column in market else []
+            if len(series):lines.append(f"{label}已完成日线参考：{series.iloc[-1]:.2f}，观测日 {series.index[-1].date()}。")
+    if any(k in question for k in ['地缘','动荡','战争','冲突','国家']):
+        lines.append('**地缘动荡是风险因子。** 避险买盘可能支持黄金；现金需求、美元走强、实际收益率上行和强平也可能压低黄金。先核实事件，再观察市场是否验证；不能直接给“战争让黄金涨几%”。')
+    lines.append('首页可选择消息传导假设，查看用户设定的额外压力边界。该边界没有80%/95%覆盖率含义，新闻尚未进入已校准的自动价格修正模型。')
+    return '\n\n'.join(lines)
+
+
+def comparison_answer(context):
+    state=context.get('journal_state') or {};diff=state.get('diff')
+    if not diff or diff['first']:return '目前正在建立首次有效快照，还没有前一次完整记录可比较。新收录不等于刚发生；之后可在首页回看预测与消息。'
+    lines=[f"最近两次已保存快照相比：**新收录{len(diff['new'])}条消息，修订{len(diff['revised'])}条**。"]
+    if state.get('pending'):lines.append('当前仍有采集或合并任务；这里比较的是已保存记录，不表示本轮所有来源已完成。')
+    for row in diff['range_changes']:
+        if row['h']==7:
+            lines.append(f"7个交易日理论80%区间：{row['previous_low80']:,.2f}—{row['previous_high80']:,.2f} → {row['low80']:,.2f}—{row['high80']:,.2f} 美元/金衡盎司。")
+            lines.append(f"同目标日期中心价修订 {row['change']:+.2f}。" if row['same_target'] else '目标日期已经滚动，中心价差不能当成同一个预测的修订。')
+    lines.append(diff['message']+' 云端实例重建后本地记录可能丢失，不是完整长期回测。')
+    return '\n\n'.join(lines)
+
+
 def answer_question(question,context,previous_question=''):
     q=question.strip().lower()
     if not q:return '可以问我当前站内价格、未来区间、重要因子、预测更新时间、国内比价或斐波那契。'
     if len(q)>800:return '问题请控制在800字以内，可以拆成几个站内数据问题。'
+    if any(k in q for k in ['ppi','pmi','制造业','服务业','经济强劲','经济强弱']):return activity_answer(context,q)
+    if any(k in q for k in ['讲话','发言','鹰鸽','官员','鲍威尔','沃什','杰斐逊','鲍曼','沃勒','说了什么']):return speech_answer(context,q)
+    if any(k in q for k in ['上次','之前','对比','新消息','新增消息','修订']):return comparison_answer(context)
+    if any(k in q for k in ['加息','降息','利率预期','fedwatch','能源','油价','原油','石油','天然气','地缘','动荡','战争','冲突']):return transmission_answer(context,q)
     if '预测' in q and any(k in q for k in ['没有','不能','不出','暂时']):return forecast_answer(context,q)
     if any(k in q for k in ['准确','靠谱','胜率','准不准','回测','可靠吗','可靠性','confidence']):return quality_answer(context)
     if any(k in q for k in ['更新','什么时候出','何时出','多久出','刷新','何时生成','什么时候生成']):return update_answer(context)

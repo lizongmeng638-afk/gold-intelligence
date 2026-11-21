@@ -10,11 +10,11 @@ def render_assistant(context):
     st.caption('免费站内规则问答：读取已取得的行情、预测和来源，不调用付费AI，也不冒充通用大模型。输入内容不发送给外部AI；云端版由本网站服务器处理。')
     ready=context['readiness']
     st.caption(f"当前期货基准日：{ready.get('reference_date') or '尚未取得'}。历史回答保留当时的时间；重新提问会读取最新快照。")
-    key='gold_qa_messages_v14'
+    key='gold_qa_messages_v15'
     messages=st.session_state.setdefault(key,[])
     if st.button('清空当前对话',key='clear_gold_qa'):
         messages=[];st.session_state[key]=messages
-    examples=['未来7天价格区间？','最重要的影响因子？','预测什么时候更新？','准确率靠谱吗？','国内哪里便宜？','斐波那契价位？']
+    examples=['未来7天价格区间？','PPI和PMI强不强？','美联储最近说了什么？','和上次相比有什么变化？','能源涨价怎样影响黄金？','最重要的影响因子？']
     columns=st.columns(3)
     pending=None
     for i,question in enumerate(examples):

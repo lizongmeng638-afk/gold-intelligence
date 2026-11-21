@@ -1,4 +1,5 @@
 import math
+import re
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
@@ -31,7 +32,7 @@ def forecast_model(mkt, fred, spot):
     if not real_coverage and "US10Y" in mkt and mkt["US10Y"].notna().sum()>60:
         x["nominal_yield_d1"]=mkt["US10Y"].diff()
         x["nominal_yield_d5"]=mkt["US10Y"].diff(5)
-    for col,prefix in [("VIX","vix"),("WTI","oil"),("GLD","gld")]:
+    for col,prefix in [("VIX","vix"),("WTI","oil"),("Brent","brent"),("NaturalGas","gas"),("GLD","gld")]:
         if col in mkt and mkt[col].notna().sum()>60:
             x[prefix+"_r1"]=mkt[col].pct_change(fill_method=None)
             if col!="GLD": x[prefix+"_r5"]=mkt[col].pct_change(5, fill_method=None)
@@ -110,13 +111,19 @@ def factor_cards(mkt, fred):
 
 def classify_news(a):
     t=a["title"].lower()
+    if re.search(r'\b(?:ppi|producer prices?)\b',t):
+        return ('美国PPI/生产端价格','条件性','PPI价格压力 → 政策与通胀预期 → 美元及实际收益率 → 黄金重新定价','核对季调环比、未季调同比及市场预期；PPI不是增长强弱指标。')
+    if re.search(r'\b(?:pmi|purchasing managers?|ism manufacturing|ism services)\b',t):
+        return ('美国PMI/经济活动','条件性','行业扩张/收缩及价格分项 → 增长与政策预期 → 美元/实际收益率 → 黄金','区分制造业与服务业，核对50分界和月度变化；不把PMI当GDP增速。')
+    if re.search(r'\b(?:not|no|unlikely)\b.{0,45}\b(?:rate hikes?|rate cuts?|cut rates|lower rates)\b',t):
+        return ('政策预期否定或条件语句','待判断','标题含否定或条件，需阅读完整语境，再核对收益率和美元','不能仅按rate hike/rate cut关键词判定鹰鸽。')
     if any(k in t for k in ["hawkish","higher for longer","rate hike","restrictive policy"]):
         return ("美联储偏鹰/利率预期上升","偏空","鹰派预期 → 实际收益率/美元可能上升 → 黄金机会成本上升","观察DXY和实际收益率是否同步上行。")
     if any(k in t for k in ["dovish","rate cut","cut rates","easing cycle","lower rates"]):
         return ("美联储偏鸽/降息预期","偏多","降息预期增强 → 实际收益率可能下降 → 黄金吸引力上升","观察实际收益率与DXY是否同步回落。")
     if any(k in t for k in ["ceasefire","peace deal","truce","de-escalation"]):
         return ("地缘政治缓和","偏空","冲突缓和 → 避险需求可能下降 → 黄金避险溢价可能回落","观察VIX、油价和金价实际反应。")
-    if any(k in t for k in ["war","missile","attack","invasion","escalation","conflict","sanctions"]):
+    if re.search(r'\b(?:wars?|missiles?|attacks?|invasion|escalation|conflicts?|sanctions?)\b',t):
         return ("地缘政治冲突/风险升级","偏多","冲突升级 → 风险厌恶上升 → 避险需求可能增加","观察VIX、美元、实际收益率是否抵消避险买盘。")
     if any(k in t for k in ["cpi","inflation","pce","consumer prices"]):
         return ("通胀数据/预期","条件性","通胀变化 → 利率路径调整 → 实际收益率和美元变化 → 黄金重新定价","比较实际值与预期，并观察实际收益率。")

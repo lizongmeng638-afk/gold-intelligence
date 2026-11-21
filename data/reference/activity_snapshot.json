@@ -1,0 +1,40 @@
+{
+  "verified_at": "2026-11-20T11:39:44.815137+00:00",
+  "period": "2026-10",
+  "source_class": "人工核对官方发布的随包快照，不是本轮实时抓取",
+  "metrics": {
+    "ppi": {
+      "period": "2026-10",
+      "mom": 0.3,
+      "previous_mom": 1.4,
+      "yoy": 6.5,
+      "previous_yoy": 6.3,
+      "release_date": "2026-11-13",
+      "source": "BLS 最终需求PPI",
+      "url": "https://www.bls.gov/news.release/archives/ppi_11132026.htm",
+      "snapshot": true
+    },
+    "manufacturing": {
+      "period": "2026-10",
+      "value": 55.5,
+      "previous": 54.5,
+      "new_orders": 55.5,
+      "employment": 52.4,
+      "prices": 75.2,
+      "source": "ISM Manufacturing PMI",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/pmi/october/",
+      "snapshot": true
+    },
+    "services": {
+      "period": "2026-10",
+      "value": 54.5,
+      "previous": 54.9,
+      "new_orders": 55.9,
+      "employment": 51.4,
+      "prices": 73.0,
+      "source": "ISM Services PMI",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/services/october/",
+      "snapshot": true
+    }
+  }
+}

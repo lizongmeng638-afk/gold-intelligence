@@ -16,7 +16,9 @@ from typing import Callable
 from .domestic import fetch_sge, fetch_retail
 from .yields import fetch_h15, fetch_rate, fetch_treasury, merge_rate_payload
 from .history import fetch_long_history
-from .feeds import MARKETS, FeedError, fetch_fred, fetch_gdelt, fetch_market, fetch_quote, fetch_rss, parse_time
+from .activity import fetch_ppi, fetch_ism
+from .speeches import SOURCES, fetch_speeches
+from .feeds import MARKETS, FeedError, fetch_fred, fetch_gdelt, fetch_market, fetch_quote, fetch_rss, parse_time, normalize_news
 
 
 @dataclass(frozen=True)
@@ -43,13 +45,20 @@ def default_specs():
         FeedSpec('rates:h15', '美联储H.15关键收益率', 900, fetch_h15, 'fed', 7*86400),
         FeedSpec('rates:DFII10', 'FRED 10年期实际收益率', 900, partial(fetch_rate,'DFII10'), 'fred', 7*86400),
         FeedSpec('rates:DGS2', 'FRED 2年期名义收益率', 900, partial(fetch_rate,'DGS2'), 'fred', 7*86400),
+        FeedSpec('macro:ppi','BLS最终需求PPI官方API',21600,fetch_ppi,'bls-api',75*86400),
+        FeedSpec('macro:pmi_manufacturing','ISM制造业PMI官方报告',21600,partial(fetch_ism,'manufacturing'),'ism',75*86400),
+        FeedSpec('macro:pmi_services','ISM服务业PMI官方报告',21600,partial(fetch_ism,'services'),'ism',75*86400),
+        FeedSpec('speeches:board', '美联储理事会讲话与证词',300,partial(fetch_speeches,'board'),'fed'),
         FeedSpec('macro', 'FRED 九项宏观指标', 6 * 3600, fetch_fred, 'fred'),
-        FeedSpec('news:fed', '美联储官方公告', 1800, partial(fetch_rss, 'https://www.federalreserve.gov/feeds/press_all.xml', '美联储官方 RSS'), 'fed'),
+        FeedSpec('news:fed', '美联储官方公告', 300, partial(fetch_rss, 'https://www.federalreserve.gov/feeds/press_all.xml', '美联储官方 RSS'), 'fed'),
         FeedSpec('news:bls', '美国劳工统计局公告', 3600, partial(fetch_rss, 'https://www.bls.gov/feed/bls_latest.rss', '美国劳工统计局 RSS'), 'bls'),
-        FeedSpec('news:bbc', 'BBC 国际新闻', 900, partial(fetch_rss, 'https://feeds.bbci.co.uk/news/world/rss.xml', 'BBC World RSS'), 'bbc'),
+        FeedSpec('news:bbc', 'BBC 国际新闻', 300, partial(fetch_rss, 'https://feeds.bbci.co.uk/news/world/rss.xml', 'BBC World RSS'), 'bbc'),
+        FeedSpec('news:business','BBC财经与能源新闻',300,partial(fetch_rss,'https://feeds.bbci.co.uk/news/business/rss.xml','BBC Business RSS'),'bbc'),
         *[FeedSpec(f'market:{ticker}', label, 3600, partial(fetch_market, ticker), 'yahoo', 5 * 86400)
           for ticker, label in MARKETS.items() if ticker != 'GC=F'],
         FeedSpec('news:gdelt', 'GDELT 国际新闻', 900, fetch_gdelt, 'gdelt'),
+        *[FeedSpec('speeches:'+key,name+'讲话索引',900,partial(fetch_speeches,key),'speech-'+key)
+          for key,(name,url,mode) in SOURCES.items() if key!='board'],
     ]
 
 
@@ -108,7 +117,7 @@ class DataHub:
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
 
-    def refresh_due(self, force=False, quote_interval=60):
+    def refresh_due(self, force=False, quote_interval=60, keys=None):
         """Return immediately. Force never erases data, duplicates jobs or bypasses backoff."""
         scheduled = 0
         now = self._clock()
@@ -116,6 +125,7 @@ class DataHub:
             if self._closed:
                 return 0
             for key, spec in self.specs.items():
+                if keys is not None and key not in keys:continue
                 e = self._entries[key]
                 ttl = max(spec.ttl, quote_interval) if key == 'quote' else spec.ttl
                 if e['running']:
@@ -145,6 +155,14 @@ class DataHub:
                 e = self._entries[spec.key]
                 if spec.key == 'history:gold' and e['data'] and data.get('observed_at','') < e['data'].get('observed_at',''):
                     raise FeedError('黄金月度来源返回较早月份，保留较新历史数据')
+                if spec.key.startswith('macro:') and e['data'] and data.get('metric',{}).get('period','')<e['data'].get('metric',{}).get('period',''):
+                    raise FeedError('来源返回较早统计期，保留较新指标')
+                if spec.key.startswith('news:') and e['data']:
+                    data={**data,'items':normalize_news(data.get('items',[])+e['data'].get('items',[]),limit=120)}
+                if spec.key.startswith('speeches:') and e['data']:
+                    previous={r['url']:r for r in e['data'].get('items',[]) if r.get('date')}
+                    previous.update({r['url']:r for r in data.get('items',[])})
+                    data={**data,'items':sorted(previous.values(),key=lambda r:r.get('date') or '',reverse=True)[:80]}
                 if spec.key.startswith('rates:'):
                     data = merge_rate_payload(e['data'],data,e['fetched_at'],fetched)
                 # A partial macro response must not delete successful older series.

@@ -34,7 +34,7 @@ def prediction_table(forecast):
         'low95':'理论95%下沿','high95':'理论95%上沿','up':'上涨情景概率','flat':'震荡情景概率','down':'下跌情景概率'})
 
 
-def render_prediction_center(market,feeds,readiness,forecast,factors):
+def render_prediction_center(market,feeds,readiness,forecast,factors,extra_context=None):
     st.markdown('### 未来黄金走势预测')
     summary=factor_conclusion(factors)
     color=COLORS[summary['kind']]
@@ -44,11 +44,13 @@ def render_prediction_center(market,feeds,readiness,forecast,factors):
         st.warning(readiness['message'])
         st.caption(readiness['schedule']+'；数据就绪后自动尝试生成，无法保证免费来源何时返回新数据。')
         render_factor_focus(factors)
+        if extra_context:extra_context()
         return
     if not forecast:
         st.warning('价格历史已取得，但有效训练样本或近期因子不足，暂未生成预测。')
         st.caption(readiness['schedule']+'；至少需要60条完整训练记录，因子日期不能落后价格超过7天。不会用示例预测填补空缺。')
         render_factor_focus(factors)
+        if extra_context:extra_context()
         return
     st.caption(f"可立即查看 · 本次生成：{local_stamp(forecast.get('generated_at'))} 北京时间 · 价格基准日：{readiness['reference_date']} · 因子日：{forecast['feature_date']}")
     st.caption(readiness['schedule']+'；取得新有效数据后重新计算，检查不保证来源发布。')
@@ -72,7 +74,8 @@ def render_prediction_center(market,feeds,readiness,forecast,factors):
     if str(forecast['feature_date'])<readiness['reference_date']:
         st.warning('部分因子日期落后黄金价格基准日，当前情景需要特别关注因子更新。')
     render_factor_focus(factors)
-    with st.expander('查看预测曲线、全部周期与下载',expanded=True):
+    if extra_context:extra_context()
+    with st.expander('查看预测曲线、全部周期与下载'):
         gold=market['Gold'].dropna().tail(90)
         dates=[gold.index[-1]]+[r['date'] for r in forecast['rows']]
         base=readiness['reference']

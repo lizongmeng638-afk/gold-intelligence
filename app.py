@@ -1,9 +1,10 @@
-"""GOLD INTELLIGENCE V1.4: rendering reads local snapshots only."""
+"""GOLD INTELLIGENCE V1.5: rendering reads local snapshots only."""
 from datetime import datetime, timezone
 from html import escape
 import base64
 import math
 import os
+import sqlite3
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,11 @@ from gold_intelligence.logic_ui import render_logic
 from gold_intelligence.intelligence import forecast_readiness, important_factors, completed_model_market
 from gold_intelligence.prediction_ui import render_prediction_center
 from gold_intelligence.assistant_ui import render_assistant
+from gold_intelligence.activity import activity_metrics
+from gold_intelligence.speeches import collected_speeches
+from gold_intelligence.event_analysis import recent_messages
+from gold_intelligence.journal import AnalysisJournal, snapshot_payload
+from gold_intelligence.context_ui import render_activity, render_policy_energy, render_refresh_comparison, render_news_stress, render_message_center
 
 BASE = Path(__file__).resolve().parent
 TZ = ZoneInfo('Asia/Shanghai')
@@ -57,6 +63,11 @@ def get_hub(collection_version):
     return DataHub(cache_path, specs=specs)
 
 
+@st.cache_resource
+def get_journal():
+    return AnalysisJournal(BASE / 'data' / 'state' / 'analysis.sqlite')
+
+
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=24)
 def cached_forecast(market, fred, reference, model_version):
     result = forecast_model(market, fred, reference)
@@ -88,7 +99,7 @@ def unpack(feeds, period):
     for ticker in MARKETS:
         data = feeds[f'market:{ticker}']['data']
         if data:
-            name = {'GC=F':'Gold', 'DX-Y.NYB':'DXY', '^TNX':'US10Y', '^VIX':'VIX', 'CL=F':'WTI', 'GLD':'GLD', 'CNY=X':'USDCNY'}[ticker]
+            name = {'GC=F':'Gold', 'DX-Y.NYB':'DXY', '^TNX':'US10Y', '^VIX':'VIX', 'CL=F':'WTI', 'BZ=F':'Brent', 'NG=F':'NaturalGas', 'GLD':'GLD', 'CNY=X':'USDCNY'}[ticker]
             frames.append(to_series(data['rows'], name))
     mkt = pd.concat(frames, axis=1, sort=True).sort_index() if frames else pd.DataFrame()
     if not mkt.empty:
@@ -101,7 +112,7 @@ def unpack(feeds, period):
     for sid, rows in resolve_rates(feeds).items():
         fred[sid] = to_series(rows, sid)
     news = normalize_news([item for key, feed in feeds.items() if key.startswith('news:') and feed['data']
-                           for item in feed['data'].get('items', [])])
+                           for item in feed['data'].get('items', [])], limit=240)
     return mkt, fred, news
 
 
@@ -221,23 +232,29 @@ def render_macro(fred, feeds):
     st.caption('月度指标的日期是统计期，通常以月初标注，不是发布时间。宏观指标每6小时检查一次，不随行情每分钟重复下载。')
 
 
-hub = get_hub('1.4.0')
+hub = get_hub('1.5.0')
 st.sidebar.image(str(ICON), width=52)
 st.sidebar.markdown('## GOLD INTELLIGENCE')
-st.sidebar.caption('预测与提醒 · 站内问答 · 历史与比价')
+st.sidebar.caption('预测 · PPI/PMI · 官员讲话 · 历史与比价')
 period_label = st.sidebar.selectbox('国际期货日线范围',['1年','2年','5年'],index=1)
 period = {'1年':1,'2年':2,'5年':5}[period_label]
 refresh = st.sidebar.selectbox('自动检查更新',['1分钟','5分钟','手动'],index=0)
 interval = 300 if refresh == '5分钟' else 60
-if refresh != '手动' or not st.session_state.get('initial_collection_v14'):
+if refresh != '手动' or not st.session_state.get('initial_collection_v15'):
     hub.refresh_due(quote_interval=interval)
-    st.session_state.initial_collection_v14 = True
+    st.session_state.initial_collection_v15 = True
 if st.sidebar.button('↻ 后台刷新',width='stretch'):
     count = hub.refresh_due(force=True)
+    st.session_state.manual_snapshot_pending = True
     st.sidebar.info(f'已提交 {count} 个更新任务。缓存保留；正在运行及冷却中的任务不会重复请求。')
-st.sidebar.caption('现货60秒 · 日线1小时 · 收益率15分钟 · 宏观6小时\n\n新闻15–60分钟；失败自动退避重试。')
+if st.sidebar.button('检查最新消息与讲话',width='stretch'):
+    keys=[s.key for s in default_specs() if s.key.startswith(('news:','speeches:','macro:','rates:'))]
+    count=hub.refresh_due(force=True,keys=keys)
+    st.session_state.manual_snapshot_pending=True
+    st.sidebar.info(f'已提交 {count} 个消息/宏观检查任务；限流冷却中的来源继续等待。')
+st.sidebar.caption('现货60秒 · 日线1小时 · 收益率15分钟 · 宏观6小时\n\n主要新闻/理事会讲话5分钟 · 地区讲话15分钟；失败自动退避。检查不等于来源一定有新发布。')
 st.sidebar.divider()
-st.sidebar.caption('V1.4 · 预测提醒与对话版')
+st.sidebar.caption('V1.5 · 消息追踪与经济强弱版')
 st.sidebar.caption('无需付费 AI API；免费行情可能延迟。')
 icon_data = base64.b64encode(ICON.read_bytes()).decode()
 st.markdown('<div class="hero"><img src="data:image/png;base64,' + icon_data + '" width="64" height="64" alt="黄金分析中心图标" style="float:right;margin-left:15px"><div class="kicker">GLOBAL GOLD & MACRO INTELLIGENCE</div><h1>全球黄金智能分析中心</h1><p>未来区间 · 重要因子提醒 · 免费数据问答</p></div>',unsafe_allow_html=True)
@@ -264,12 +281,33 @@ full_market = completed_model_market(full_market)
 readiness = forecast_readiness(full_market, snapshot['feeds'])
 if refresh == '手动':
     readiness['schedule'] = '当前为手动检查模式，点击“后台刷新”后检查；取得新数据时重新计算'
-forecast = cached_forecast(full_market, fred, readiness['reference'], '1.4.0') if readiness['ready'] else None
+forecast = cached_forecast(full_market, fred, readiness['reference'], '1.5.0') if readiness['ready'] else None
 factors = important_factors(full_market, snapshot['feeds'])
 context = {'market':full_market, 'fred':fred, 'feeds':snapshot['feeds'], 'readiness':readiness, 'forecast':forecast, 'factors':factors, 'news':news}
-market_tab, logic_tab, domestic_tab, macro_tab, news_tab, chat_tab, quality_tab = st.tabs(['预测中心', '逻辑与历史', '国内比价', '宏观指标', '国际新闻', '对话助手', '数据诊断'])
+context['activity']=activity_metrics(snapshot['feeds'])
+context['speeches']=collected_speeches(snapshot['feeds'])
+context['messages']=recent_messages(news,context['speeches'])
+collecting=any(e['running'] for key,e in snapshot['feeds'].items() if key.startswith(('market:','rates:','news:','speeches:','macro')))
+try:
+    context['journal']=get_journal()
+    context['journal_state']=context['journal'].capture(snapshot_payload(context),
+        force=st.session_state.get('manual_snapshot_pending',False),allow_write=bool(forecast and not collecting))
+    if not collecting:st.session_state.manual_snapshot_pending=False
+except (OSError,ValueError,RuntimeError,sqlite3.Error) as exc:
+    st.warning('本机快照暂不能保存：'+str(exc)[:160]+'。当前行情和分析仍可查看。')
+
+
+def render_current_context():
+    render_activity(context)
+    render_refresh_comparison(context)
+    render_news_stress(context)
+    with st.expander('加息预期、能源涨跌和地缘风险的传导'):
+        render_policy_energy(context)
+
+
+market_tab, logic_tab, domestic_tab, macro_tab, news_tab, chat_tab, quality_tab = st.tabs(['预测中心', '逻辑与历史', '国内比价', '宏观指标', '消息与讲话', '对话助手', '数据诊断'])
 with market_tab:
-    render_prediction_center(full_market, snapshot['feeds'], readiness, forecast, factors)
+    render_prediction_center(full_market, snapshot['feeds'], readiness, forecast, factors, extra_context=render_current_context)
     with st.expander('当前行情、走势图与技术指标'):
         render_market(mkt, fred, snapshot['feeds'])
 with logic_tab:
@@ -277,11 +315,12 @@ with logic_tab:
 with domestic_tab:
     render_domestic(snapshot['feeds'])
 with macro_tab:
+    render_activity(context)
     render_macro(fred, snapshot['feeds'])
 with news_tab:
-    render_news(news, snapshot['feeds'])
+    render_message_center(context)
 with chat_tab:
     render_assistant(context)
 with quality_tab:
     render_quality(snapshot['feeds'], snapshot['storage_error'])
-st.caption('GOLD INTELLIGENCE V1.4 · 黄金研究工具 · 统计模型不保证未来价格。')
+st.caption('GOLD INTELLIGENCE V1.5 · 黄金研究工具 · 统计模型不保证未来价格。')

@@ -23,7 +23,7 @@ _YF_CONFIGURED = False
 UTC = timezone.utc
 FRED_IDS = ('DFII10', 'DGS2', 'DGS10', 'T10YIE', 'CPIAUCSL', 'PCEPI', 'UNRATE', 'FEDFUNDS', 'PAYEMS')
 MARKETS = {'GC=F': 'COMEX黄金期货', 'DX-Y.NYB': '美元指数 DXY', '^TNX': '10年期名义收益率',
-           '^VIX': 'VIX', 'CL=F': 'WTI原油', 'GLD': 'GLD价格', 'CNY=X': 'USD/CNY'}
+           '^VIX': 'VIX', 'CL=F': 'WTI原油', 'BZ=F':'Brent原油','NG=F':'美国天然气期货', 'GLD': 'GLD价格', 'CNY=X': 'USD/CNY'}
 HEADERS = {'User-Agent': 'GOLD-INTELLIGENCE/1.1 (local public-data research)',
            'Accept': 'application/json,text/csv,application/xml,text/xml,*/*'}
 
@@ -243,7 +243,7 @@ def fetch_fred():
                                {'id': ','.join(FRED_IDS)}, max_bytes=5_000_000, timeout=(4, 8), deadline_seconds=15))
 
 
-def normalize_news(items):
+def normalize_news(items,limit=60):
     result, titles, urls = [], set(), set()
     for item in items:
         title = re.sub(r'\s+', ' ', str(item.get('title', ''))).strip()
@@ -259,7 +259,7 @@ def normalize_news(items):
         urls.add(url)
         result.append({**item, 'title': title, 'url': url, 'date': stamp,
                        'domain': urlparse(url).netloc})
-    return sorted(result, key=lambda r: r['date'], reverse=True)[:60]
+    return sorted(result, key=lambda r: r['date'], reverse=True)[:limit]
 
 
 def fetch_gdelt():
@@ -282,8 +282,10 @@ def fetch_rss(url, name):
     items = []
     for node in root.findall('.//item'):
         stamp = node.findtext('pubDate') or node.findtext('{http://purl.org/dc/elements/1.1/}date')
+        description=re.sub(r'<[^>]+>',' ',node.findtext('description',''))
         items.append({'title': node.findtext('title', ''), 'url': node.findtext('link', ''),
-                      'date': stamp, 'source': name, 'time_kind': '官方发布时间'})
+                      'description':re.sub(r'\s+',' ',description).strip()[:800],
+                      'date': stamp, 'source': name, 'time_kind': '来源发布时间'})
     items = normalize_news(items)
     if not items:
         raise FeedError('官方 RSS 无有效条目')

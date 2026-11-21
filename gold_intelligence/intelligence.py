@@ -12,7 +12,7 @@ TZ=ZoneInfo('Asia/Shanghai')
 CHICAGO='https://www.chicagofed.org/publications/chicago-fed-letter/2021/464'
 GRAM='https://www.gold.org/goldhub/tools/gold-return-attribution-model'
 GROUPS={'gold':'黄金价格与趋势','dxy':'美元指数','real_yield':'10年实际收益率',
-        'nominal_yield':'10年名义收益率替代','vix':'VIX风险情绪','oil':'原油','gld':'GLD价格代理'}
+        'nominal_yield':'10年名义收益率替代','vix':'VIX风险情绪','oil':'WTI原油','brent':'Brent原油','gas':'美国天然气期货','gld':'GLD价格代理'}
 
 
 def completed_model_market(market,now=None):

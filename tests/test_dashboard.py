@@ -44,7 +44,7 @@ class DashboardTests(unittest.TestCase):
                     at=AppTest.from_file(str(BASE/'app.py')).run(timeout=15)
                 self.assertEqual(len(at.exception),0, str(at.exception))
                 text=' '.join(x.value for x in at.markdown)
-                self.assertIn('国际新闻与官方公告',text)
+                self.assertIn('美联储讲话、能源与地缘消息',text)
                 self.assertIn('美国宏观经济指标',text)
                 self.assertGreaterEqual(len(at.dataframe),2)
             finally:
